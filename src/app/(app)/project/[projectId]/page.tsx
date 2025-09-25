@@ -1,3 +1,4 @@
+/// <reference path="../../../../.idx/dev.d.ts" />
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
