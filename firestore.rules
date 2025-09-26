@@ -1,31 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isOwner(projectId, userId) {
+      return get(/databases/$(database)/documents/projects/$(projectId)).data.members[userId] == 'owner';
+    }
+
     match /users/{userId} {
-      // Allow any authenticated user to read any user's profile.
       allow read: if request.auth != null;
-      // Users can only write to their own document.
       allow write: if request.auth != null && request.auth.uid == userId;
     }
 
     match /projects/{projectId} {
-      // User must be a member to read or update a project.
-      allow read, write: if request.auth != null && request.auth.uid in resource.data.members;
-      // Any authenticated user can create a project.
-      allow create: if request.auth != null;
-      // Only the project owner can delete a project.
-      allow delete: if request.auth != null && resource.data.members[request.auth.uid] == 'owner';
+      allow read: if request.auth != null && request.auth.uid in resource.data.members;
+
+      allow create: if request.auth != null &&
+                      (request.resource.data.parentProjectId == null ||
+                       get(/databases/$(database)/documents/projects/$(request.resource.data.parentProjectId)).data.members[request.auth.uid] in ['owner', 'editor']);
+
+      allow update: if request.auth != null &&
+                      (resource.data.members[request.auth.uid] == 'owner' ||
+                       (resource.data.members[request.auth.uid] == 'editor' && !('members' in request.resource.data.diff(resource.data).affectedKeys())));
+
+      allow delete: if request.auth != null && isOwner(projectId, request.auth.uid);
     }
 
     match /tasks/{taskId} {
-      // Allow users to read, update, or delete tasks if they are a member of the parent project.
-      allow read, update, delete: if request.auth != null && (request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.members);
-      // Allow users to create a task if they are a member of the project being assigned to.
-      allow create: if request.auth != null && (request.auth.uid in get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.members);
+      allow read, update, delete: if request.auth != null &&
+                                    get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.members[request.auth.uid] in ['owner', 'editor', 'viewer'];
+
+      allow create: if request.auth != null &&
+                      get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.members[request.auth.uid] in ['owner', 'editor'];
     }
 
     match /task_statuses/{statusId} {
-      // Allow any authenticated user to read and write statuses.
       allow read, write: if request.auth != null;
     }
   }
