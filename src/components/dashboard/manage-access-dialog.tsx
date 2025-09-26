@@ -8,9 +8,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '../ui/skeleton';
 import type { Project, User, ProjectRole } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
-import { Input } from '../ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { X } from 'lucide-react';
+import { ChevronsUpDown } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -18,6 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command';
 
 type ManageAccessDialogProps = {
     children?: React.ReactNode;
@@ -37,7 +38,9 @@ export default function ManageAccessDialog({ children, projectId, open: controll
   const [project, setProject] = useState<Project | null>(null);
   const [members, setMembers] = useState<MemberWithRole[]>([]);
   const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState('');
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [isComboboxOpen, setComboboxOpen] = useState(false);
+
   const { toast } = useToast();
 
   const open = controlledOpen ?? internalOpen;
@@ -59,6 +62,8 @@ export default function ManageAccessDialog({ children, projectId, open: controll
         setLoading(false);
       };
       fetchProjectData();
+    } else {
+        setSelectedUser(null);
     }
   }, [projectId, open, getProject, users]);
 
@@ -66,9 +71,9 @@ export default function ManageAccessDialog({ children, projectId, open: controll
   const isOwner = projectOwner?.user.id === currentUser?.id;
 
   const handleAddMember = async () => {
-    if (!email || !isOwner) return;
+    if (!selectedUser || !isOwner) return;
 
-    if (members.some(m => m.user.email === email)) {
+    if (members.some(m => m.user.id === selectedUser.id)) {
         toast({
             variant: 'destructive',
             title: 'User already a member',
@@ -77,16 +82,16 @@ export default function ManageAccessDialog({ children, projectId, open: controll
         return;
     }
     
-    const userToAdd = await findUserByEmail(email);
+    const userToAdd = await findUserByEmail(selectedUser.email);
     
     if (userToAdd) {
         setMembers(prev => [...prev, { user: userToAdd, role: 'viewer' }]);
-        setEmail('');
+        setSelectedUser(null);
     } else {
         toast({
             variant: 'destructive',
             title: 'User not found',
-            description: `No user with the email "${email}" found.`
+            description: `No user with the email "${selectedUser.email}" found.`
         });
     }
   };
@@ -117,6 +122,8 @@ export default function ManageAccessDialog({ children, projectId, open: controll
     }
   };
 
+  const availableUsers = users.filter(u => !members.some(m => m.user.id === u.id));
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
         {children && <DialogTrigger asChild>{children}</DialogTrigger>}
@@ -130,12 +137,46 @@ export default function ManageAccessDialog({ children, projectId, open: controll
         
         {isOwner && (
             <div className="flex gap-2 mt-4">
-                <Input 
-                    placeholder="user@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); handleAddMember(); } }}
-                />
+                <Popover open={isComboboxOpen} onOpenChange={setComboboxOpen}>
+                    <div className="relative w-full">
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={isComboboxOpen}
+                                className="w-full justify-between font-normal"
+                                onClick={() => setComboboxOpen(prev => !prev)}
+                            >
+                                <span className="truncate">{selectedUser?.name || 'user@example.com'}</span>
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                    </div>
+                    <PopoverContent className="p-0 w-[330px]">
+                        <Command>
+                            <CommandInput placeholder="Search by name or email..." />
+                            <CommandEmpty>No users found.</CommandEmpty>
+                            <CommandGroup>
+                                {availableUsers.map(user => (
+                                    <CommandItem
+                                        key={user.id}
+                                        value={`${user.name} ${user.email}`}
+                                        onSelect={() => {
+                                            if (selectedUser?.id === user.id) {
+                                                setSelectedUser(null);
+                                            } else {
+                                                setSelectedUser(user);
+                                            }
+                                            setComboboxOpen(false);
+                                        }}
+                                    >
+                                        {user.name} <span className="text-xs text-muted-foreground ml-2">({user.email})</span>
+                                    </CommandItem>
+                                ))}
+                            </CommandGroup>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
                 <Button onClick={handleAddMember}>Add</Button>
             </div>
         )}
