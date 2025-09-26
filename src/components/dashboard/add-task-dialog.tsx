@@ -219,39 +219,73 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
               <FormField
                 control={form.control}
                 name="dueTime"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Due Date (Optional)</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant={'outline'}
-                            className={cn(
-                              'w-full justify-start text-left font-normal',
-                              !field.value && 'text-muted-foreground'
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          initialFocus
-                        />
-                        <div className="p-2 border-t">
-                            <Button variant="ghost" size="sm" className="w-full" onClick={() => form.setValue('dueTime', undefined)}>Clear</Button>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                    const handleDateChange = (date: Date | undefined) => {
+                        if (!date) {
+                            field.onChange(undefined);
+                            return;
+                        }
+                        const newDate = new Date(date);
+                        const currentVal = field.value;
+                        if (currentVal) {
+                            newDate.setHours(currentVal.getHours());
+                            newDate.setMinutes(currentVal.getMinutes());
+                        }
+                        field.onChange(newDate);
+                    };
+
+                    const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+                        const time = e.target.value;
+                        if (!time) return;
+
+                        const [hours, minutes] = time.split(':').map(Number);
+                        const currentVal = field.value;
+                        const newDate = currentVal ? new Date(currentVal) : new Date();
+                        newDate.setHours(hours);
+                        newDate.setMinutes(minutes);
+                        field.onChange(newDate);
+                    };
+
+                    return (
+                        <FormItem className="flex flex-col">
+                            <FormLabel>Due Date (Optional)</FormLabel>
+                            <Popover>
+                            <PopoverTrigger asChild>
+                                <FormControl>
+                                <Button
+                                    variant={'outline'}
+                                    className={cn(
+                                    'w-full justify-start text-left font-normal',
+                                    !field.value && 'text-muted-foreground'
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {field.value ? format(field.value, 'dd-MMM-yyyy HH:mm') : <span>Pick a date</span>}
+                                </Button>
+                                </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={handleDateChange}
+                                />
+                                <div className="p-2 border-t">
+                                    <Input
+                                        type="time"
+                                        value={field.value ? format(field.value, 'HH:mm') : ''}
+                                        onChange={handleTimeChange}
+                                    />
+                                </div>
+                                <div className="p-2 border-t">
+                                    <Button variant="ghost" size="sm" className="w-full" onClick={() => field.onChange(undefined)}>Clear</Button>
+                                </div>
+                            </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                        </FormItem>
+                    );
+                }}
               />
               <FormField
                 control={form.control}
