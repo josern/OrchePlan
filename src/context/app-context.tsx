@@ -1,10 +1,11 @@
-'use client';
+'use client'
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { db, auth } from '@/lib/firebase';
 import { 
   collection, getDocs, doc, writeBatch, query, getDoc, 
-  where, updateDoc, setDoc, deleteDoc, addDoc, onSnapshot, orderBy
+  where, updateDoc, setDoc, deleteDoc, addDoc, onSnapshot, orderBy,
+  QuerySnapshot, DocumentData
 } from 'firebase/firestore';
 import { 
     onAuthStateChanged, 
@@ -113,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 if (parent) {
                     parent.subProjects.push(project);
                 } else {
+                    // This case can happen if a user has access to a sub-project but not its parent.
                     nestedProjects.push(project);
                 }
             } else {
@@ -126,26 +128,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const usersSnapshot = await getDocs(collection(db, 'users'));
         const allUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
         setUsers(allUsers);
-        
-        // Tasks
-        const allFetchedProjectIds = allProjectsFlat.map(p => p.id);
-        if (allFetchedProjectIds.length > 0) {
-            const taskPromises = allFetchedProjectIds.map(projectId => {
-                const tasksQuery = query(collection(db, "tasks"), where("projectId", "==", projectId));
-                return getDocs(tasksQuery);
-            });
-
-            const taskSnapshots = await Promise.all(taskPromises);
-            const allTasks = taskSnapshots.flatMap(snapshot =>
-                snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task))
-            );
-            setTasks(allTasks);
-        } else {
-            setTasks([]);
-        }
 
     } catch (error) {
-        console.error("Error fetching data from Firestore:", error);
+        console.error("Error fetching initial data from Firestore:", error);
     } finally {
         setLoading(false);
     }
@@ -183,13 +168,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!currentUser) return;
+
     const q = query(collection(db, "task_statuses"), orderBy("order"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const statuses = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskStatusOption));
         setTaskStatusOptions(statuses);
     });
+
     return () => unsubscribe();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || projects.length === 0) {
+        setTasks([]);
+        return;
+    }
+
+    const getAllProjectIds = (projs: Project[]): string[] => {
+        let ids: string[] = [];
+        projs.forEach(p => {
+            ids.push(p.id);
+            if (p.subProjects) {
+                ids = ids.concat(getAllProjectIds(p.subProjects));
+            }
+        });
+        return ids;
+    };
+
+    const allProjectIds = getAllProjectIds(projects);
+
+    if (allProjectIds.length === 0) {
+        setTasks([]);
+        return;
+    }
+
+    const CHUNK_SIZE = 30; // Firestore 'in' query limit is 30
+    const projectChunks = [];
+    for (let i = 0; i < allProjectIds.length; i += CHUNK_SIZE) {
+        projectChunks.push(allProjectIds.slice(i, i + CHUNK_SIZE));
+    }
+
+    let activeTasks: { [key: string]: Task } = {};
+
+    const unsubscribes = projectChunks.map(chunk => {
+        const tasksQuery = query(collection(db, "tasks"), where("projectId", "in", chunk));
+        return onSnapshot(tasksQuery, (querySnapshot: QuerySnapshot<DocumentData>) => {
+            querySnapshot.docChanges().forEach((change) => {
+                const taskData = { id: change.doc.id, ...change.doc.data() } as Task;
+                if (change.type === "removed") {
+                    delete activeTasks[taskData.id];
+                } else {
+                    activeTasks[taskData.id] = taskData;
+                }
+            });
+            setTasks(Object.values(activeTasks));
+        }, (error) => {
+            console.error(`Error listening to task updates for project chunk:`, error);
+        });
+    });
+
+    return () => {
+        unsubscribes.forEach(unsub => unsub());
+    };
+}, [currentUser, projects]);
 
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -218,9 +259,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newDocRef = doc(collection(db, 'projects'));
         const { parentProjectId, ...restOfProject } = project;
 
+        let members: Record<string, ProjectRole> = { [currentUser.id]: 'owner' };
+
+        if (parentProjectId) {
+            const parentProject = await getProject(parentProjectId);
+            if (parentProject && parentProject.members) {
+                members = parentProject.members;
+            }
+        }
+
         const newProjectData: any = {
             ...restOfProject,
-            members: { [currentUser.id]: 'owner' as ProjectRole },
+            members,
         };
 
         if (parentProjectId) {
@@ -238,45 +288,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateProject = async (projectId: string, projectData: Partial<Omit<Project, 'id' | 'subProjects'>>) => {
     if (!currentUser) throw new Error("User not authenticated");
 
+    const getAllSubProjectIds = async (pId: string): Promise<string[]> => {
+        let ids: string[] = [];
+        const q = query(collection(db, 'projects'), where('parentProjectId', '==', pId));
+        const snapshot = await getDocs(q);
+        for (const document of snapshot.docs) {
+            ids.push(document.id);
+            const subIds = await getAllSubProjectIds(document.id);
+            ids = ids.concat(subIds);
+        }
+        return ids;
+    };
+
     try {
         const batch = writeBatch(db);
-
-        const findProjectInState = (projs: Project[], pId: string): Project | null => {
-            for (const p of projs) {
-                if (p.id === pId) return p;
-                if (p.subProjects) {
-                    const found = findProjectInState(p.subProjects, pId);
-                    if (found) return found;
-                }
-            }
-            return null;
-        };
-
-        const getSubProjectIds = (project: Project): string[] => {
-            let ids: string[] = [];
-            project.subProjects?.forEach(sub => {
-                ids.push(sub.id);
-                ids = ids.concat(getSubProjectIds(sub));
-            });
-            return ids;
-        };
+        const mainProjectRef = doc(db, 'projects', projectId);
+        batch.update(mainProjectRef, projectData);
 
         if (projectData.members) {
-            const rootProject = findProjectInState(projects, projectId);
-            if (!rootProject) throw new Error("Project not found for cascading update.");
-
-            const allSubProjectIds = getSubProjectIds(rootProject);
-            
-            const mainProjectRef = doc(db, 'projects', projectId);
-            batch.update(mainProjectRef, projectData);
-
+            const allSubProjectIds = await getAllSubProjectIds(projectId);
             allSubProjectIds.forEach(subProjectId => {
                 const subProjectRef = doc(db, 'projects', subProjectId);
                 batch.update(subProjectRef, { members: projectData.members });
             });
-        } else {
-            const projectRef = doc(db, 'projects', projectId);
-            batch.update(projectRef, projectData);
         }
 
         await batch.commit();
@@ -294,7 +328,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const projectRef = doc(db, 'projects', projectId);
         const projectSnap = await getDoc(projectRef);
         if (projectSnap.exists()) {
-            return { id: projectSnap.id, ...projectSnap.data(), subProjects: [] } as unknown as Project;
+            // The returned project does not need to be nested here.
+            return { id: projectSnap.id, ...projectSnap.data() } as Project;
         }
         return null;
     } catch (error) {
@@ -352,7 +387,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 if (p.parentProjectId && idMap.has(p.parentProjectId)) {
                     newProjectData.parentProjectId = idMap.get(p.parentProjectId);
                 } else if (p.parentProjectId && !idMap.has(p.parentProjectId)) {
-                    newProjectData.parentProjectId = p.parentProjectId;
+                     newProjectData.parentProjectId = p.parentProjectId;
                 }
                 
                 projectBatch.set(doc(db, 'projects', newId), newProjectData);
@@ -394,41 +429,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
             const batch = writeBatch(db);
 
-            const findProjectInState = (projs: Project[], pId: string): Project | null => {
-                for (const p of projs) {
-                    if (p.id === pId) return p;
-                    if (p.subProjects) {
-                        const found = findProjectInState(p.subProjects, pId);
-                        if (found) return found;
-                    }
-                }
-                return null;
-            };
-
-            const getProjectIdsToDelete = (project: Project): string[] => {
-                let ids = [project.id];
-                if (project.subProjects) {
-                    project.subProjects.forEach(sub => {
-                        ids = ids.concat(getProjectIdsToDelete(sub));
-                    });
+            // Since state might be out of sync, fetch hierarchy from DB
+            const getProjectIdsToDelete = async (pId: string): Promise<string[]> => {
+                let ids: string[] = [pId];
+                const q = query(collection(db, 'projects'), where('parentProjectId', '==', pId));
+                const snapshot = await getDocs(q);
+                for (const document of snapshot.docs) {
+                    ids = ids.concat(await getProjectIdsToDelete(document.id));
                 }
                 return ids;
             };
-            
-            const rootProjectToDelete = findProjectInState(projects, projectId);
-            if (!rootProjectToDelete) throw new Error("Project to delete not found.");
 
-            const allProjectIdsToDelete = getProjectIdsToDelete(rootProjectToDelete);
+            const allProjectIdsToDelete = await getProjectIdsToDelete(projectId);
             
             if (allProjectIdsToDelete.length > 0) {
-                for (let i = 0; i < allProjectIdsToDelete.length; i += 30) {
-                    const chunk = allProjectIdsToDelete.slice(i, i + 30);
-                    const taskQuery = query(collection(db, 'tasks'), where('projectId', 'in', chunk));
-                    const taskSnapshots = await getDocs(taskQuery);
-                    taskSnapshots.forEach(taskDoc => {
-                        batch.delete(taskDoc.ref);
-                    });
-                }
+                 const taskQuery = query(collection(db, 'tasks'), where('projectId', 'in', allProjectIdsToDelete));
+                 const taskSnapshots = await getDocs(taskQuery);
+                 taskSnapshots.forEach(taskDoc => {
+                     batch.delete(taskDoc.ref);
+                 });
             }
             
             allProjectIdsToDelete.forEach(pId => {
@@ -436,15 +455,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             });
 
             await batch.commit();
-
-            const removeProjectsRecursively = (projs: Project[], idsToRemove: string[]): Project[] => {
-                return projs.filter(p => !idsToRemove.includes(p.id))
-                           .map(p => ({ ...p, subProjects: p.subProjects ? removeProjectsRecursively(p.subProjects, idsToRemove) : [] }));
-            };
-
-            setProjects(prevProjects => removeProjectsRecursively(prevProjects, allProjectIdsToDelete));
-            setTasks(prevTasks => prevTasks.filter(t => !allProjectIdsToDelete.includes(t.projectId)));
-
+            await fetchData(currentUser.id);
 
             if (pathname.startsWith(`/project/${projectId}`)) {
                 router.push('/dashboard');
@@ -471,13 +482,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
         });
 
-        const docRef = await addDoc(collection(db, 'tasks'), taskDataForFirestore);
-
-        const newTask: Task = {
-          id: docRef.id,
-          ...task,
-        }
-        setTasks(prev => [...prev, newTask]);
+        await addDoc(collection(db, 'tasks'), taskDataForFirestore);
+        // Local state update is no longer needed, onSnapshot will handle it.
 
     } catch (error) {
         console.error("Error adding task: ", error);
@@ -488,12 +494,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateTask = async (updatedTask: Task) => {
     if (!currentUser) throw new Error("User not authenticated");
     
-    setTasks(prevTasks =>
-        prevTasks.map(task =>
-            task.id === updatedTask.id ? updatedTask : task
-        )
-    );
-
     try {
         const taskRef = doc(db, 'tasks', updatedTask.id);
         const { id, ...taskData } = updatedTask;
@@ -506,23 +506,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
         
         await updateDoc(taskRef, cleanTaskData);
+        // Local state update is no longer needed, onSnapshot will handle it.
     } catch (error) {
         console.error("Error updating task: ", error);
-        if(currentUser?.id) await fetchData(currentUser.id);
+        // No need to refetch, snapshot listener will handle errors and updates.
     }
   };
   
   const deleteTask = async (taskId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
     
-    const originalTasks = tasks;
-    setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
-
     try {
         await deleteDoc(doc(db, 'tasks', taskId));
+        // Local state update is no longer needed, onSnapshot will handle it.
     } catch (error) {
         console.error("Error deleting task: ", error);
-        setTasks(originalTasks);
+        // No need to revert state, onSnapshot is the source of truth.
         throw error;
     }
   };
@@ -532,10 +531,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, userData);
+      
+      setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, ...userData } : u));
+
       if (currentUser.id === userId) {
-        setCurrentUser({ ...currentUser, ...userData });
+        setCurrentUser(prev => prev ? { ...prev, ...userData } : null);
       }
-      await fetchData(currentUser.id);
 
     } catch (error) {
       console.error("Error updating user:", error);
@@ -552,6 +553,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
 
       await setDoc(doc(db, 'users', authUser.uid), newUser);
+      // The user list will be updated via fetchData on next login or manually.
     } catch (error) {
       console.error("Error creating user: ", error);
       throw error;
@@ -561,15 +563,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addTaskStatus = async (status: Omit<TaskStatusOption, 'id'>) => {
     const newOrder = taskStatusOptions.length > 0 ? Math.max(...taskStatusOptions.map(s => s.order)) + 1 : 0;
     await addDoc(collection(db, 'task_statuses'), { ...status, order: newOrder });
+    // Status list updates via its own onSnapshot listener.
   };
 
   const updateTaskStatus = async (statusId: string, statusData: Partial<Omit<TaskStatusOption, 'id'>>) => {
     const statusRef = doc(db, 'task_statuses', statusId);
     await updateDoc(statusRef, statusData);
+    // Status list updates via its own onSnapshot listener.
   };
 
   const deleteTaskStatus = async (statusId: string) => {
     await deleteDoc(doc(db, 'task_statuses', statusId));
+    // Status list updates via its own onSnapshot listener.
   };
 
   const updateTaskStatusOrder = async (statuses: TaskStatusOption[]) => {
@@ -579,6 +584,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       batch.update(statusRef, { order: index });
     });
     await batch.commit();
+    // Status list updates via its own onSnapshot listener.
   };
 
 

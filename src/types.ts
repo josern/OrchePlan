@@ -1,30 +1,36 @@
+export type ProjectRole = 'owner' | 'editor' | 'viewer';
+
+
 export type Project = {
     id: string;
     name: string;
-    description: string;
+    description?: string;
+    members: Record<string, ProjectRole>;
+    parentProjectId?: string;
     subProjects?: Project[];
-    parentId?: string | null;
-}; 
+};
 
 export type Task = {
     id: string;
     title: string;
+    description?: string;
     status: string;
-    dueTime: string;
+    dueDate?: string;
     projectId: string;
-    assigneeId: string;
-    parentId?: string | null;
+    assigneeId?: string;
+    parentTaskId?: string;
 };
 
-export type TaskStatus = {
+export type TaskStatusOption = {
     id: string;
     name: string;
     color: string;
+    order: number;
 }
 
 export type User = {
-    id: string;
+    id:string;
     name: string;
     email: string;
-    avatar: string;
+    avatarUrl: string;
 }
