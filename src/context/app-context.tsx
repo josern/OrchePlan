@@ -237,12 +237,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateProject = async (projectId: string, projectData: Partial<Omit<Project, 'id' | 'subProjects'>>) => {
     if (!currentUser) throw new Error("User not authenticated");
+
     try {
-        const projectRef = doc(db, 'projects', projectId);
-        await updateDoc(projectRef, projectData);
+        const batch = writeBatch(db);
+
+        const findProjectInState = (projs: Project[], pId: string): Project | null => {
+            for (const p of projs) {
+                if (p.id === pId) return p;
+                if (p.subProjects) {
+                    const found = findProjectInState(p.subProjects, pId);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const getSubProjectIds = (project: Project): string[] => {
+            let ids: string[] = [];
+            project.subProjects?.forEach(sub => {
+                ids.push(sub.id);
+                ids = ids.concat(getSubProjectIds(sub));
+            });
+            return ids;
+        };
+
+        if (projectData.members) {
+            const rootProject = findProjectInState(projects, projectId);
+            if (!rootProject) throw new Error("Project not found for cascading update.");
+
+            const allSubProjectIds = getSubProjectIds(rootProject);
+            
+            const mainProjectRef = doc(db, 'projects', projectId);
+            batch.update(mainProjectRef, projectData);
+
+            allSubProjectIds.forEach(subProjectId => {
+                const subProjectRef = doc(db, 'projects', subProjectId);
+                batch.update(subProjectRef, { members: projectData.members });
+            });
+        } else {
+            const projectRef = doc(db, 'projects', projectId);
+            batch.update(projectRef, projectData);
+        }
+
+        await batch.commit();
         await fetchData(currentUser.id);
+
     } catch (error) {
-        console.error("Error updating project: ", error);
+        console.error("Error updating project(s): ", error);
+        if(currentUser?.id) await fetchData(currentUser.id);
+        throw error;
     }
   };
 
