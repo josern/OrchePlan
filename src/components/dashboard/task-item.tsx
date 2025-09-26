@@ -164,11 +164,13 @@ export default function TaskItem({ task, onDelete, onStatusChange, canEdit: canE
                 <CardTitle className={`text-lg font-semibold ${isDone ? 'line-through' : ''}`}>{task.title}</CardTitle>
             </div>
             <div className="flex items-center">
-                <AddSubTaskDialog parentTask={task} open={isAddSubTaskDialogOpen} onOpenChange={setAddSubTaskDialogOpen}>
-                    <Button variant="ghost" size="icon" onClick={() => setAddSubTaskDialogOpen(true)}>
-                        <Plus className="h-4 w-4" />
-                    </Button>
-                </AddSubTaskDialog>
+                {canEdit && (
+                    <AddSubTaskDialog parentTask={task} open={isAddSubTaskDialogOpen} onOpenChange={setAddSubTaskDialogOpen}>
+                        <Button variant="ghost" size="icon" onClick={() => setAddSubTaskDialogOpen(true)}>
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                    </AddSubTaskDialog>
+                )}
                 {canEdit && (
                     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                         <DropdownMenuTrigger asChild>

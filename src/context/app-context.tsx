@@ -27,6 +27,8 @@ interface AppContextType {
   taskStatusOptions: TaskStatusOption[];
   currentUser: User | null;
   loading: boolean;
+  isKanbanHeaderVisible: boolean;
+  toggleKanbanHeader: () => void;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   addProject: (project: Omit<Project, 'id' | 'subProjects'>) => Promise<void>;
@@ -58,8 +60,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [taskStatusOptions, setTaskStatusOptions] = useState<TaskStatusOption[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isKanbanHeaderVisible, setIsKanbanHeaderVisible] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+
+  const toggleKanbanHeader = () => {
+    setIsKanbanHeaderVisible(prevState => !prevState);
+  };
 
   const clearState = () => {
     setUsers([]);
@@ -656,7 +663,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login, logout, addProject, updateProject, getProject, duplicateProject, 
       addTask, updateTask, deleteTask, updateUser, createUser, addTaskStatus, 
       updateTaskStatus, deleteTaskStatus, changePassword, findUserByEmail, 
-      deleteProject, setTaskStatusOptions, updateTaskStatusOrder
+      deleteProject, setTaskStatusOptions, updateTaskStatusOrder, isKanbanHeaderVisible,
+      toggleKanbanHeader
     }}>
       {children}
     </AppContext.Provider>

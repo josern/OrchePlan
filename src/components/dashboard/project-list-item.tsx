@@ -4,7 +4,7 @@ import { useApp } from '@/context/app-context';
 import { Folder, ChevronDown, ChevronRight, Users, Plus, Trash2, Copy } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { cn, truncate } from '@/lib/utils';
 import type { Project } from '@/lib/types';
 import dynamic from 'next/dynamic';
@@ -22,11 +22,17 @@ export function ProjectListItem({ project }: ProjectListItemProps) {
   const [isOpen, setIsOpen] = useState(true);
   const isActive = pathname === `/project/${project.id}`;
 
-  const canDeleteProject = (project: Project) => {
-    if (!currentUser || !project.members) return false;
+  const canEdit = useMemo(() => {
+    if (!project || !currentUser || !project.members) return false;
+    const userRole = project.members[currentUser.id];
+    return userRole === 'owner' || userRole === 'editor';
+  }, [project, currentUser]);
+
+  const isOwner = useMemo(() => {
+    if (!project || !currentUser || !project.members) return false;
     const userRole = project.members[currentUser.id];
     return userRole === 'owner';
-  };
+  }, [project, currentUser]);
 
   const hasSubProjects = project.subProjects && project.subProjects.length > 0;
 
@@ -47,14 +53,18 @@ export function ProjectListItem({ project }: ProjectListItemProps) {
           <span className="flex-grow">{truncate(project.name, 16)}</span>
         </Link>
         <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <AddProjectDialog parentProjectId={project.id}>
-                <button className="p-1 hover:bg-muted rounded-md"><Plus size={14} /></button>
-            </AddProjectDialog>
-            <button onClick={() => duplicateProject(project.id)} className="p-1 hover:bg-muted rounded-md"><Copy size={14} /></button>
+            {canEdit && (
+                <AddProjectDialog parentProjectId={project.id}>
+                    <button className="p-1 hover:bg-muted rounded-md"><Plus size={14} /></button>
+                </AddProjectDialog>
+            )}
+            {canEdit && (
+                <button onClick={() => duplicateProject(project.id)} className="p-1 hover:bg-muted rounded-md"><Copy size={14} /></button>
+            )}
             <ManageAccessDialog projectId={project.id}>
                 <button className="p-1 hover:bg-muted rounded-md"><Users size={14} /></button>
             </ManageAccessDialog>
-            {canDeleteProject(project) && (
+            {canEdit && (
                 <button onClick={() => deleteProject(project.id, pathname)} className="p-1 hover:bg-destructive/20 text-destructive rounded-md"><Trash2 size={14} /></button>
             )}
         </div>

@@ -1,5 +1,14 @@
+'use client';
+
 import DailyOverview from "@/components/dashboard/daily-overview";
+import { useApp } from "@/context/app-context";
 
 export default function DashboardPage() {
-    return <DailyOverview />;
+    const { isKanbanHeaderVisible } = useApp();
+
+    return (
+        <>
+            {isKanbanHeaderVisible && <DailyOverview />}
+        </>
+    );
 }

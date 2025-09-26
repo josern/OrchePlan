@@ -1,4 +1,3 @@
-/// <reference path="../../../../.idx/dev.d.ts" />
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
@@ -22,7 +21,10 @@ export default function ProjectPage() {
   const params = useParams();
   const router = useRouter();
   const { projectId } = params;
-  const { projects, tasks, updateTask, deleteTask, loading, addTask, taskStatusOptions, currentUser } = useApp();
+  const { 
+    projects, tasks, updateTask, deleteTask, loading, addTask, 
+    taskStatusOptions, currentUser, isKanbanHeaderVisible 
+  } = useApp();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -120,12 +122,41 @@ export default function ProjectPage() {
 
   return (
     <div>
-        <Tabs defaultValue="board">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-4">
-                    <Folder className="w-8 h-8 text-primary" />
-                    <h1 className="text-3xl font-bold font-headline">{project.name}</h1>
+        {isKanbanHeaderVisible && (
+            <>
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                    <div className="flex items-center gap-4">
+                        <Folder className="w-8 h-8 text-primary" />
+                        <h1 className="text-3xl font-bold font-headline">{project.name}</h1>
+                    </div>
                 </div>
+
+                {project.subProjects && project.subProjects.length > 0 && (
+                  <Card className="mb-6">
+                    <CardHeader>
+                      <CardTitle className="flex items-center"><Folder className="mr-2" />Sub-Projects</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {project.subProjects!.map(sub => (
+                          <Link key={sub.id} href={`/project/${sub.id}`}>
+                            <div className="block p-4 rounded-lg border hover:bg-muted transition-colors">
+                              <div className="flex items-center gap-3">
+                                <Folder className="w-6 h-6 text-muted-foreground" />
+                                <h3 className="font-semibold">{sub.name}</h3>
+                              </div>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+            </>
+        )}
+
+        <Tabs defaultValue="board">
+            <div className={`flex justify-end mb-4 ${!isKanbanHeaderVisible ? 'hidden' : ''}`}>
                 <div className="flex items-center gap-2">
                     {canEdit && (
                         <>
@@ -140,28 +171,6 @@ export default function ProjectPage() {
                     </TabsList>
                 </div>
             </div>
-
-            {project.subProjects && project.subProjects.length > 0 && (
-              <Card className="mb-6">
-                <CardHeader>
-                  <CardTitle className="flex items-center"><Folder className="mr-2" />Sub-Projects</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {project.subProjects!.map(sub => (
-                      <Link key={sub.id} href={`/project/${sub.id}`}>
-                        <div className="block p-4 rounded-lg border hover:bg-muted transition-colors">
-                          <div className="flex items-center gap-3">
-                            <Folder className="w-6 h-6 text-muted-foreground" />
-                            <h3 className="font-semibold">{sub.name}</h3>
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
             <TabsContent value="board">
                 <KanbanBoard tasks={sortedProjectTasks} onStatusChange={handleStatusChange} onDelete={handleDeleteTask} />
