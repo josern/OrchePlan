@@ -173,7 +173,12 @@ export default function ProjectPage() {
             </div>
 
             <TabsContent value="board">
-                <KanbanBoard tasks={sortedProjectTasks} onStatusChange={handleStatusChange} onDelete={handleDeleteTask} />
+                <KanbanBoard 
+                    tasks={sortedProjectTasks} 
+                    onStatusChange={handleStatusChange} 
+                    onDelete={handleDeleteTask} 
+                    isKanbanHeaderVisible={isKanbanHeaderVisible}
+                />
             </TabsContent>
             <TabsContent value="list">
                 <div className="space-y-3">

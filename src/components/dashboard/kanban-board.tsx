@@ -14,6 +14,7 @@ type KanbanBoardProps = {
   tasks: Task[];
   onStatusChange: (taskId: string, status: TaskStatus) => void;
   onDelete: (taskId: string) => void;
+  isKanbanHeaderVisible?: boolean;
 };
 
 type KanbanColumnProps = {
@@ -24,6 +25,7 @@ type KanbanColumnProps = {
     onStatusChange: (taskId: string, status: TaskStatus) => void;
     projects: Project[];
     currentUser: User | null;
+    isKanbanHeaderVisible?: boolean;
 };
 
 const findProjectById = (projects: Project[], id: string): Project | undefined => {
@@ -75,7 +77,7 @@ const SortableTaskItem = ({ task, onDelete, onStatusChange, projects, currentUse
 };
 
 
-const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, currentUser }: KanbanColumnProps) => {
+const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, currentUser, isKanbanHeaderVisible }: KanbanColumnProps) => {
     const { setNodeRef } = useDroppable({ id });
 
     return (
@@ -89,7 +91,7 @@ const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, cu
                 </CardTitle>
             </CardHeader>
             <CardContent ref={setNodeRef} className="p-2 pt-0 flex-grow">
-                <ScrollArea className="h-[calc(100vh-22rem)]">
+                <ScrollArea className={isKanbanHeaderVisible === false ? "h-[calc(100vh-12rem)]" : "h-[calc(100vh-19rem)]"}>
                      <SortableContext
                         id={id as string}
                         items={tasks.map(t => t.id)}
@@ -121,7 +123,7 @@ const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, cu
 };
 
 
-export default function KanbanBoard({ tasks, onStatusChange, onDelete }: KanbanBoardProps) {
+export default function KanbanBoard({ tasks, onStatusChange, onDelete, isKanbanHeaderVisible }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const { taskStatusOptions, projects, currentUser } = useApp();
 
@@ -199,6 +201,7 @@ export default function KanbanBoard({ tasks, onStatusChange, onDelete }: KanbanB
                     onStatusChange={onStatusChange}
                     projects={projects}
                     currentUser={currentUser}
+                    isKanbanHeaderVisible={isKanbanHeaderVisible}
                 />
             ))}
         </div>
