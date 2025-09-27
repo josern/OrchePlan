@@ -2,7 +2,7 @@
 
 import { UserNav } from './user-nav';
 import { Button } from '../ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Eye, EyeOff } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useApp } from '@/context/app-context';
 import { useEffect, useMemo, useState } from 'react';
@@ -15,7 +15,7 @@ const AddTaskDialog = dynamic(() => import('./add-task-dialog'), { ssr: false })
 
 export default function MainHeader() {
   const pathname = usePathname();
-  const { projects, currentUser } = useApp();
+  const { projects, currentUser, isKanbanHeaderVisible, toggleKanbanHeader } = useApp();
   const [title, setTitle] = useState('Today\'s Focus');
   const [currentProjectId, setCurrentProjectId] = useState<string | undefined>(undefined);
 
@@ -56,6 +56,9 @@ export default function MainHeader() {
       <MainPageSidebarTrigger />
       <h1 className="text-lg font-semibold md:text-xl font-headline">{title}</h1>
       <div className="ml-auto flex items-center gap-4">
+        <Button variant="outline" size="icon" onClick={toggleKanbanHeader}>
+          {isKanbanHeaderVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </Button>
         {canEditProject && (
             <AddTaskDialog defaultProjectId={currentProjectId}>
                 <Button>

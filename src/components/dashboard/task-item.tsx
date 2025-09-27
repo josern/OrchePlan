@@ -34,7 +34,7 @@ type TaskItemProps = {
 };
 
 export default function TaskItem({ task, onDelete, onStatusChange, canEdit: canEditProp, showStatusSelector = true }: TaskItemProps) {
-  const { users, updateTask, taskStatusOptions, projects, currentUser, tasks } = useApp();
+  const { users, updateTask, projects, currentUser, tasks } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isAddSubTaskDialogOpen, setAddSubTaskDialogOpen] = useState(false);
   const timeAgo = task.dueTime ? formatDistanceToNow(parseISO(task.dueTime), { addSuffix: true }) : null;
@@ -43,6 +43,7 @@ export default function TaskItem({ task, onDelete, onStatusChange, canEdit: canE
   const assignee = users.find(u => u.id === task.assigneeId);
   const project = useMemo(() => findProjectById(projects, task.projectId), [projects, task.projectId]);
   const subTasks = useMemo(() => tasks.filter(t => t.parentId === task.id), [tasks, task.id]);
+  const taskStatusOptions = useMemo(() => project?.taskStatusOptions || [], [project]);
   
   const internalCanEdit = useMemo(() => {
       if (!project || !currentUser) return false;
@@ -128,7 +129,7 @@ export default function TaskItem({ task, onDelete, onStatusChange, canEdit: canE
                             </Tooltip>
                         </TooltipProvider>
                     )}
-                    {showStatusSelector &&
+                    {showStatusSelector && taskStatusOptions.length > 0 &&
                         <Select value={currentStatus} onValueChange={handleStatusChange} disabled={!canEdit}>
                             <SelectTrigger className="w-32 h-8 text-xs">
                                 <SelectValue placeholder="Status" />
@@ -164,11 +165,13 @@ export default function TaskItem({ task, onDelete, onStatusChange, canEdit: canE
                 <CardTitle className={`text-lg font-semibold ${isDone ? 'line-through' : ''}`}>{task.title}</CardTitle>
             </div>
             <div className="flex items-center">
-                <AddSubTaskDialog parentTask={task} open={isAddSubTaskDialogOpen} onOpenChange={setAddSubTaskDialogOpen}>
-                    <Button variant="ghost" size="icon" onClick={() => setAddSubTaskDialogOpen(true)}>
-                        <Plus className="h-4 w-4" />
-                    </Button>
-                </AddSubTaskDialog>
+                {canEdit && (
+                    <AddSubTaskDialog parentTask={task} open={isAddSubTaskDialogOpen} onOpenChange={setAddSubTaskDialogOpen}>
+                        <Button variant="ghost" size="icon" onClick={() => setAddSubTaskDialogOpen(true)}>
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                    </AddSubTaskDialog>
+                )}
                 {canEdit && (
                     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                         <DropdownMenuTrigger asChild>
@@ -229,7 +232,7 @@ export default function TaskItem({ task, onDelete, onStatusChange, canEdit: canE
                         </Tooltip>
                     </TooltipProvider>
                 )}
-                {showStatusSelector &&
+                {showStatusSelector && taskStatusOptions.length > 0 &&
                   <Select value={currentStatus} onValueChange={handleStatusChange} disabled={!canEdit}>
                       <SelectTrigger className="w-36">
                           <SelectValue placeholder="Status" />
