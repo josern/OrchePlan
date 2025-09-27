@@ -33,4 +33,5 @@ export type Project = {
   members: Record<string, ProjectRole>;
   subProjects?: Project[];
   parentProjectId?: string;
+  taskStatusOptions?: TaskStatusOption[];
 };

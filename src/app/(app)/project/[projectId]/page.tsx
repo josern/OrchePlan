@@ -23,12 +23,13 @@ export default function ProjectPage() {
   const { projectId } = params;
   const { 
     projects, tasks, updateTask, deleteTask, loading, addTask, 
-    taskStatusOptions, currentUser, isKanbanHeaderVisible 
+    currentUser, isKanbanHeaderVisible 
   } = useApp();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const project = findProjectById(projects, projectId as string);
+  const taskStatusOptions = useMemo(() => project?.taskStatusOptions || [], [project]);
 
   const canEdit = useMemo(() => {
     if (!project || !currentUser) return false;
@@ -174,7 +175,8 @@ export default function ProjectPage() {
 
             <TabsContent value="board">
                 <KanbanBoard 
-                    tasks={sortedProjectTasks} 
+                    tasks={sortedProjectTasks}
+                    taskStatusOptions={taskStatusOptions}
                     onStatusChange={handleStatusChange} 
                     onDelete={handleDeleteTask} 
                     isKanbanHeaderVisible={isKanbanHeaderVisible}

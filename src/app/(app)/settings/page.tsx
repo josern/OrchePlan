@@ -1,9 +1,7 @@
 
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import ProfileForm from "@/components/settings/profile-form";
-import ManageStatuses from "@/components/settings/manage-statuses";
 import ChangePasswordForm from "@/components/settings/change-password-form";
-import { ThemeToggle } from "@/components/theme-toggle";
+import AppearanceForm from "@/components/settings/appearance-form";
 
 export default function SettingsPage() {
     return (
@@ -15,17 +13,7 @@ export default function SettingsPage() {
             
             <ProfileForm />
             <ChangePasswordForm />
-            <ManageStatuses />
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Theme</CardTitle>
-                    <CardDescription>Select your preferred color scheme.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <ThemeToggle />
-                </CardContent>
-            </Card>
+            <AppearanceForm />
 
         </div>
     )

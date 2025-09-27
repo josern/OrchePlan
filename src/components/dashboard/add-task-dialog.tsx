@@ -13,20 +13,20 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from '../ui/dialog';
+import { Button } from '../ui/button';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../ui/form';
+import { Input } from '../ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { CalendarIcon, X } from 'lucide-react';
-import { Calendar } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
+import { Calendar } from '../ui/calendar';
+import { cn } from '../../lib/utils';
 import { format } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Textarea } from '../ui/textarea';
-import type { Task, Project, TaskStatus, User } from '@/lib/types';
-import { useApp } from '@/context/app-context';
-import { findProjectById } from '@/lib/projects';
+import type { Task, Project, TaskStatus, User } from '../../lib/types';
+import { useApp } from '../../context/app-context';
+import { findProjectById } from '../../lib/projects';
 
 const taskFormSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters.'),
@@ -46,11 +46,17 @@ type AddTaskDialogProps = {
 
 export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, onClose }: AddTaskDialogProps) {
   const [open, setOpen] = useState(false);
-  const { projects, users, addTask, updateTask, taskStatusOptions, currentUser } = useApp();
+  const { projects, users, addTask, updateTask, currentUser } = useApp();
+  const selectedProjectId = useForm().watch('projectId', defaultProjectId);
+
+  const projectTaskStatuses = useMemo(() => {
+    const project = findProjectById(projects, selectedProjectId);
+    return project?.taskStatusOptions || [];
+  }, [selectedProjectId, projects]);
 
   const defaultStatusId = useMemo(() => {
-    return taskStatusOptions.find(s => s.name.toLowerCase() === 'to do')?.id || taskStatusOptions[0]?.id || '';
-  }, [taskStatusOptions]);
+    return projectTaskStatuses.find(s => s.name.toLowerCase() === 'to do')?.id || projectTaskStatuses[0]?.id || '';
+  }, [projectTaskStatuses]);
 
   const form = useForm<z.infer<typeof taskFormSchema>>({
     resolver: zodResolver(taskFormSchema),
@@ -84,8 +90,6 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
       form.reset(initialValues);
     }
   }, [open, taskToEdit, defaultProjectId, form, defaultStatusId]);
-
-  const selectedProjectId = form.watch('projectId');
 
   const availableAssignees = useMemo(() => {
     if (!selectedProjectId) return [];
@@ -300,7 +304,7 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {taskStatusOptions.map(status => (
+                        {projectTaskStatuses.map(status => (
                             <SelectItem key={status.id} value={status.id} className="capitalize">{status.name}</SelectItem>
                         ))}
                       </SelectContent>

@@ -24,10 +24,11 @@ interface AppContextType {
   users: User[];
   projects: Project[];
   tasks: Task[];
-  taskStatusOptions: TaskStatusOption[];
   currentUser: User | null;
   loading: boolean;
   isKanbanHeaderVisible: boolean;
+  isSidebarOpenByDefault: boolean;
+  toggleSidebarDefault: () => void;
   toggleKanbanHeader: () => void;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -41,28 +42,45 @@ interface AppContextType {
   deleteTask: (taskId: string) => Promise<void>;
   updateUser: (userId: string, userData: Partial<Pick<User, 'name' | 'email' | 'avatarUrl'>>) => Promise<void>;
   createUser: (user: Omit<User, 'id'>, password: string) => Promise<void>;
-  addTaskStatus: (status: Omit<TaskStatusOption, 'id'>) => Promise<void>;
-  updateTaskStatus: (statusId: string, statusData: Partial<Omit<TaskStatusOption, 'id'>>) => Promise<void>;
-  deleteTaskStatus: (statusId: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   findUserByEmail: (email: string) => Promise<User | null>;
-  setTaskStatusOptions: React.Dispatch<React.SetStateAction<TaskStatusOption[]>>;
-  updateTaskStatusOrder: (statuses: TaskStatusOption[]) => Promise<void>;
+  addProjectTaskStatus: (projectId: string, status: Omit<TaskStatusOption, 'id'>) => Promise<void>;
+  updateProjectTaskStatus: (projectId: string, statusId: string, statusData: Partial<Omit<TaskStatusOption, 'id'>>) => Promise<void>;
+  deleteProjectTaskStatus: (projectId: string, statusId: string) => Promise<void>;
+  updateProjectTaskStatusOrder: (projectId: string, statuses: TaskStatusOption[]) => Promise<void>;
+  addDefaultTaskStatuses: (projectId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [taskStatusOptions, setTaskStatusOptions] = useState<TaskStatusOption[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isKanbanHeaderVisible, setIsKanbanHeaderVisible] = useState(true);
+  const [isSidebarOpenByDefault, setIsSidebarOpenByDefault] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    const cookieValue = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('sidebar_default_open='))
+      ?.split('=')[1];
+    if (cookieValue) {
+      setIsSidebarOpenByDefault(cookieValue === 'true');
+    }
+  }, []);
+
+  const toggleSidebarDefault = () => {
+    setIsSidebarOpenByDefault(prevState => {
+      const newState = !prevState;
+      document.cookie = `sidebar_default_open=${newState};path=/;max-age=31536000`; // Expires in 1 year
+      return newState;
+    });
+  };
 
   const toggleKanbanHeader = () => {
     setIsKanbanHeaderVisible(prevState => !prevState);
@@ -72,40 +90,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUsers([]);
     setProjects([]);
     setTasks([]);
-    setTaskStatusOptions([]);
     setCurrentUser(null);
   }
 
   const fetchData = useCallback(async (currentUserId: string) => {
     setLoading(true);
     try {
-        const statusesQuery = query(collection(db, "task_statuses"), orderBy("order"));
-        const statusesSnapshot = await getDocs(statusesQuery);
-        let statuses = statusesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskStatusOption));
-        
-        if (statuses.length === 0) {
-            const batch = writeBatch(db);
-            const defaultStatuses = [
-                { name: 'To Do', color: '#3B82F6', order: 0 },
-                { name: 'In Progress', color: '#EAB308', order: 1 },
-                { name: 'Blocked', color: '#EF4444', order: 2 },
-                { name: 'Done', color: '#22C55E', order: 3 },
-            ];
-
-            defaultStatuses.forEach(status => {
-                const docRef = doc(collection(db, 'task_statuses'));
-                batch.set(docRef, status);
-            });
-
-            await batch.commit();
-            const newStatusesSnapshot = await getDocs(statusesQuery);
-            statuses = newStatusesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskStatusOption));
-        }
-        setTaskStatusOptions(statuses);
-
         const projectsQuery = query(collection(db, "projects"), where(`members.${currentUserId}`, "in", ['owner', 'editor', 'viewer']));
         const projectsSnapshot = await getDocs(projectsQuery);
         const allProjectsFlat = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+
+        for (const project of allProjectsFlat) {
+          const projectStatusesQuery = query(collection(db, 'projects', project.id, 'task_statuses'), orderBy("order"));
+          const projectStatusesSnapshot = await getDocs(projectStatusesQuery);
+          project.taskStatusOptions = projectStatusesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskStatusOption));
+        }
 
         const projectMap = new Map<string, Project & { subProjects: Project[] }>();
         allProjectsFlat.forEach(p => {
@@ -170,18 +169,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [currentUser, loading, pathname, router]);
 
   useEffect(() => {
-    if (!currentUser) return;
-
-    const q = query(collection(db, "task_statuses"), orderBy("order"));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const statuses = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskStatusOption));
-        setTaskStatusOptions(statuses);
-    });
-
-    return () => unsubscribe();
-  }, [currentUser]);
-
-  useEffect(() => {
     if (!currentUser || projects.length === 0) {
         setTasks([]);
         return;
@@ -235,6 +222,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 }, [currentUser, projects]);
 
+  const addDefaultTaskStatuses = async (projectId: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+    try {
+        const batch = writeBatch(db);
+        const defaultStatuses = [
+            { name: 'To Do', color: '#3B82F6', order: 0 },
+            { name: 'In Progress', color: '#EAB308', order: 1 },
+            { name: 'Blocked', color: '#EF4444', order: 2 },
+            { name: 'Done', color: '#22C55E', order: 3 },
+        ];
+
+        defaultStatuses.forEach(status => {
+            const docRef = doc(collection(db, 'projects', projectId, 'task_statuses'));
+            batch.set(docRef, status);
+        });
+
+        await batch.commit();
+        await fetchData(currentUser.id);
+    } catch (error) {
+        console.error("Error adding default task statuses: ", error);
+        throw error;
+    }
+  };
+
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
@@ -281,7 +292,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         await setDoc(newDocRef, newProjectData);
-        await fetchData(currentUser.id);
+        await addDefaultTaskStatuses(newDocRef.id);
     } catch (error) {
         console.error("Error adding project: ", error);
         throw error;
@@ -297,7 +308,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             for (const p of projs) {
                 if (p.id === pId) {
                     const collect = (proj: Project) => {
-                        // Note: The starting project ID is NOT included, only sub-projects.
                         if (proj.subProjects) {
                             proj.subProjects.forEach(sub => {
                                 ids.push(sub.id);
@@ -441,8 +451,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const deleteProject = async (projectId: string, pathname: string) => {
         if (!currentUser) throw new Error("User not authenticated");
     
-        console.log(`Starting deletion process for project: ${projectId}`);
-    
         try {
             const getProjectIdsFromState = (allProjects: Project[], startId: string): string[] => {
                 let ids: string[] = [];
@@ -470,10 +478,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             };
     
             const allProjectIdsToDelete = getProjectIdsFromState(projects, projectId);
-            console.log('Projects and sub-projects to delete (from state):', allProjectIdsToDelete);
     
             if (allProjectIdsToDelete.length > 0) {
-                console.log('Deleting tasks for projects...');
                 const CHUNK_SIZE = 10;
                 for (let i = 0; i < allProjectIdsToDelete.length; i += CHUNK_SIZE) {
                     const chunk = allProjectIdsToDelete.slice(i, i + CHUNK_SIZE);
@@ -490,13 +496,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 }
             }
     
-            console.log('All tasks deleted. Now deleting projects...');
             const projectBatch = writeBatch(db);
             allProjectIdsToDelete.forEach(pId => {
                 projectBatch.delete(doc(db, 'projects', pId));
             });
             await projectBatch.commit();
-            console.log('Projects deleted successfully.');
     
             await fetchData(currentUser.id);
     
@@ -600,27 +604,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const addTaskStatus = async (status: Omit<TaskStatusOption, 'id'>) => {
-    const newOrder = taskStatusOptions.length > 0 ? Math.max(...taskStatusOptions.map(s => s.order)) + 1 : 0;
-    await addDoc(collection(db, 'task_statuses'), { ...status, order: newOrder });
+  const addProjectTaskStatus = async (projectId: string, status: Omit<TaskStatusOption, 'id'>) => {
+    if (!currentUser) throw new Error("User not authenticated");
+    const statusesRef = collection(db, 'projects', projectId, 'task_statuses');
+    const q = query(statusesRef);
+    const snapshot = await getDocs(q);
+    const newOrder = snapshot.size > 0 ? snapshot.size : 0;
+    await addDoc(statusesRef, { ...status, order: newOrder });
+    await fetchData(currentUser.id);
   };
 
-  const updateTaskStatus = async (statusId: string, statusData: Partial<Omit<TaskStatusOption, 'id'>>) => {
-    const statusRef = doc(db, 'task_statuses', statusId);
+  const updateProjectTaskStatus = async (projectId: string, statusId: string, statusData: Partial<Omit<TaskStatusOption, 'id'>>) => {
+    if (!currentUser) throw new Error("User not authenticated");
+    const statusRef = doc(db, 'projects', projectId, 'task_statuses', statusId);
     await updateDoc(statusRef, statusData);
+    await fetchData(currentUser.id);
   };
 
-  const deleteTaskStatus = async (statusId: string) => {
-    await deleteDoc(doc(db, 'task_statuses', statusId));
+  const deleteProjectTaskStatus = async (projectId: string, statusId: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+    const statusRef = doc(db, 'projects', projectId, 'task_statuses', statusId);
+    await deleteDoc(statusRef);
+    await fetchData(currentUser.id);
   };
 
-  const updateTaskStatusOrder = async (statuses: TaskStatusOption[]) => {
+  const updateProjectTaskStatusOrder = async (projectId: string, statuses: TaskStatusOption[]) => {
+    if (!currentUser) throw new Error("User not authenticated");
     const batch = writeBatch(db);
     statuses.forEach((status, index) => {
-      const statusRef = doc(db, 'task_statuses', status.id);
+      const statusRef = doc(db, 'projects', projectId, 'task_statuses', status.id);
       batch.update(statusRef, { order: index });
     });
     await batch.commit();
+    await fetchData(currentUser.id);
   };
 
 
@@ -659,12 +675,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      users, projects, tasks, taskStatusOptions, loading, currentUser, 
+      users, projects, tasks, loading, currentUser, 
       login, logout, addProject, updateProject, getProject, duplicateProject, 
-      addTask, updateTask, deleteTask, updateUser, createUser, addTaskStatus, 
-      updateTaskStatus, deleteTaskStatus, changePassword, findUserByEmail, 
-      deleteProject, setTaskStatusOptions, updateTaskStatusOrder, isKanbanHeaderVisible,
-      toggleKanbanHeader
+      addTask, updateTask, deleteTask, updateUser, createUser, changePassword, findUserByEmail, 
+      deleteProject, isKanbanHeaderVisible,
+      toggleKanbanHeader, isSidebarOpenByDefault, toggleSidebarDefault,
+      addProjectTaskStatus, updateProjectTaskStatus, deleteProjectTaskStatus, updateProjectTaskStatusOrder, addDefaultTaskStatuses
     }}>
       {children}
     </AppContext.Provider>

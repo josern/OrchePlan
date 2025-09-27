@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Task, TaskStatus, Project, User } from '@/lib/types';
+import { Task, TaskStatus, Project, User, TaskStatusOption } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import TaskItem from './task-item';
@@ -12,6 +12,7 @@ import { useApp } from '@/context/app-context';
 
 type KanbanBoardProps = {
   tasks: Task[];
+  taskStatusOptions: TaskStatusOption[];
   onStatusChange: (taskId: string, status: TaskStatus) => void;
   onDelete: (taskId: string) => void;
   isKanbanHeaderVisible?: boolean;
@@ -123,9 +124,9 @@ const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, cu
 };
 
 
-export default function KanbanBoard({ tasks, onStatusChange, onDelete, isKanbanHeaderVisible }: KanbanBoardProps) {
+export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, onDelete, isKanbanHeaderVisible }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const { taskStatusOptions, projects, currentUser } = useApp();
+  const { projects, currentUser } = useApp();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -136,6 +137,7 @@ export default function KanbanBoard({ tasks, onStatusChange, onDelete, isKanbanH
   );
 
   const columns = useMemo(() => {
+    if (!taskStatusOptions) return [];
     const groupedTasks = taskStatusOptions.reduce((acc, status) => {
       acc[status.id] = [];
       return acc;
