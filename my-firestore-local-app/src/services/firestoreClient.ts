@@ -1,39 +1,29 @@
-import { Firestore } from '@google-cloud/firestore';
+// Legacy Firestore client stub.
+// The project has migrated to PostgreSQL + Prisma. This file remains as a harmless stub
+// to avoid breaking imports in older code. Do not use in new code — use src/services/sqlClient.ts instead.
 
 export class FirestoreClient {
-    private firestore: Firestore;
-
     constructor() {
-        this.firestore = new Firestore({
-            projectId: 'your-project-id',
-            host: 'localhost:8080',
-            ssl: false,
-        });
+        // Intentionally empty. Using FirestoreClient in this codebase is deprecated.
     }
 
-    async createDocument(collection: string, documentId: string, data: object) {
-        const docRef = this.firestore.collection(collection).doc(documentId);
-        await docRef.set(data);
+    async createDocument(): Promise<void> {
+        throw new Error('FirestoreClient is deprecated. Use sqlClient.ts');
     }
 
-    async readDocument(collection: string, documentId: string) {
-        const docRef = this.firestore.collection(collection).doc(documentId);
-        const doc = await docRef.get();
-        return doc.exists ? doc.data() : null;
+    async readDocument(): Promise<null> {
+        throw new Error('FirestoreClient is deprecated. Use sqlClient.ts');
     }
 
-    async updateDocument(collection: string, documentId: string, data: object) {
-        const docRef = this.firestore.collection(collection).doc(documentId);
-        await docRef.update(data);
+    async updateDocument(): Promise<void> {
+        throw new Error('FirestoreClient is deprecated. Use sqlClient.ts');
     }
 
-    async deleteDocument(collection: string, documentId: string) {
-        const docRef = this.firestore.collection(collection).doc(documentId);
-        await docRef.delete();
+    async deleteDocument(): Promise<void> {
+        throw new Error('FirestoreClient is deprecated. Use sqlClient.ts');
     }
 
-    async getAllDocuments(collection: string) {
-        const snapshot = await this.firestore.collection(collection).get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    async getAllDocuments(): Promise<any[]> {
+        throw new Error('FirestoreClient is deprecated. Use sqlClient.ts');
     }
 }

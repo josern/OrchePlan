@@ -1,6 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
+export type MemberRole = 'owner' | 'editor' | 'viewer';
+export const ALLOWED_ROLES: MemberRole[] = ['owner', 'editor', 'viewer'];
+
 const prisma = new PrismaClient();
 
 // graceful shutdown
@@ -22,6 +25,11 @@ export async function createUser(email: string, password: string, name?: string)
 
 export async function findUserByEmail(email: string) {
   return prisma.user.findUnique({ where: { email } });
+}
+
+export async function findUserById(id: string) {
+  // intentionally do not return password
+  return prisma.user.findUnique({ where: { id }, select: { id: true, email: true, name: true, createdAt: true, updatedAt: true } });
 }
 
 export async function createProject(data: { name: string; description?: string; ownerId: string }) {
@@ -71,19 +79,36 @@ export async function isProjectEditorOrOwner(projectId: string, userId: string) 
 
 // Project member management
 export async function listProjectMembers(projectId: string) {
-  return prisma.projectMember.findMany({ where: { projectId }, include: { user: true } });
+  return prisma.projectMember.findMany({
+    where: { projectId },
+    include: { user: { select: { id: true, email: true, name: true, createdAt: true, updatedAt: true } } }
+  });
 }
 
-export async function addProjectMember(projectId: string, userId: string, role: string) {
-  return prisma.projectMember.create({ data: { projectId, userId, role } });
+export async function addProjectMember(projectId: string, userId: string, role: MemberRole) {
+  // ensure user exists
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return null;
+  // prevent duplicate
+  const existing = await prisma.projectMember.findFirst({ where: { projectId, userId } });
+  if (existing) return 'exists';
+  const created = await prisma.projectMember.create({ data: { projectId, userId, role } });
+  // return with sanitized user
+  return prisma.projectMember.findUnique({ where: { id: created.id }, include: { user: { select: { id: true, email: true, name: true, createdAt: true, updatedAt: true } } } });
 }
 
 export async function removeProjectMember(projectId: string, userId: string) {
-  return prisma.projectMember.deleteMany({ where: { projectId, userId } });
+  const found = await prisma.projectMember.findFirst({ where: { projectId, userId } });
+  if (!found) return 0;
+  await prisma.projectMember.delete({ where: { id: found.id } });
+  return 1;
 }
 
-export async function updateProjectMemberRole(projectId: string, userId: string, role: string) {
-  return prisma.projectMember.updateMany({ where: { projectId, userId }, data: { role } });
+export async function updateProjectMemberRole(projectId: string, userId: string, role: MemberRole) {
+  const found = await prisma.projectMember.findFirst({ where: { projectId, userId } });
+  if (!found) return null;
+  const updated = await prisma.projectMember.update({ where: { id: found.id }, data: { role }, include: { user: { select: { id: true, email: true, name: true, createdAt: true, updatedAt: true } } } });
+  return updated;
 }
 
 export async function getTasksByProject(projectId: string) {
