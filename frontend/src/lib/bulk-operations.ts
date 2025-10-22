@@ -9,7 +9,7 @@ interface BulkTaskData {
   assignedTo?: string;
 }
 
-interface BulkImportResult {
+export interface BulkImportResult {
   success: boolean;
   imported: number;
   failed: number;
