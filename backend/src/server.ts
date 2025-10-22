@@ -103,6 +103,15 @@ const authLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// Higher limit for bulk operations (authenticated users)
+const bulkOperationLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 10, // Allow 10 bulk operations per 5 minutes
+    message: 'Too many bulk operations, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 // Apply rate limiting (skip auth rate limiting in test environment)
 app.use(generalLimiter);
 if (process.env.NODE_ENV !== 'test') {

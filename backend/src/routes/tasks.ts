@@ -295,4 +295,71 @@ router.delete('/:id/comments/:commentId', ensureUser, async (req: AuthedRequest,
   }
 });
 
+// POST /tasks/bulk-import - Bulk import multiple tasks  
+router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response) => {
+  try {
+    const { tasks, projectId } = req.body;
+    
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return res.status(400).json({ error: 'Tasks array is required' });
+    }
+    
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+
+    // Check if user has permission to create tasks in this project
+    const userId = req.userId as string;
+    const hasPermission = await isProjectEditorOrOwner(projectId, userId);
+    if (!hasPermission) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+
+    const results = [];
+    const errors = [];
+
+    // Process tasks in batches to avoid overwhelming the database
+    for (let i = 0; i < tasks.length; i++) {
+      const taskData = tasks[i];
+      
+      try {
+        const task = await createTask({
+          title: taskData.title,
+          description: taskData.description || '',
+          projectId,
+          statusId: taskData.statusId || null,
+          priority: taskData.priority || 'medium',
+          dueTime: taskData.dueDate || null,
+          assigneeId: taskData.assignedTo || null
+        });
+
+        results.push(task);
+        
+        // Broadcast each successful task creation
+        realtimeService.broadcastTaskUpdate(task, 'created');
+        
+      } catch (error) {
+        console.error(`Error creating task ${i + 1}:`, error);
+        errors.push({
+          index: i + 1,
+          title: taskData.title,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      imported: results.length,
+      failed: errors.length,
+      tasks: results,
+      errors: errors
+    });
+    
+  } catch (error) {
+    console.error('Error in bulk import:', error);
+    res.status(500).json({ error: 'Failed to import tasks' });
+  }
+});
+
 export default router;

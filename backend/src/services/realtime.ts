@@ -85,7 +85,12 @@ class RealtimeService {
       this.removeClient(clientId);
     });
 
-    logger.info('SSE client successfully connected', { clientId, userId, projectCount: projectIds.length });
+    logger.info('SSE client successfully connected', { 
+      clientId, 
+      userId, 
+      projectCount: projectIds.length,
+      totalActiveClients: this.clients.size 
+    });
   }
 
   // Remove a client connection
@@ -93,10 +98,11 @@ class RealtimeService {
     const client = this.clients.get(clientId);
     if (client) {
       this.clients.delete(clientId);
-      logger.debug('Client removed from active connections', { 
+      logger.info('Client removed from active connections', { 
         clientId, 
         userId: client.userId,
-        remainingClients: this.clients.size 
+        remainingClients: this.clients.size,
+        reason: 'disconnect_event'
       });
     }
   }

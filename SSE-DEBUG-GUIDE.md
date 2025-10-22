@@ -116,8 +116,15 @@ console.log('Event Source State:', info.eventSourceStateText);
 
 ### 2. Check Message Reception
 ```javascript
-// This should update when you receive messages
+// Check last message received
 console.log('Last message:', window.lastSSEMessage);
+
+// Check if welcome message was received
+if (window.lastSSEMessage?.type === 'connected') {
+  console.log('✅ Welcome message received - connection established');
+} else {
+  console.log('❌ No welcome message - connection may have failed');
+}
 ```
 
 ### 3. Test Manual Reconnection
