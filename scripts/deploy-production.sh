@@ -113,15 +113,15 @@ sudo -u $APP_USER ln -sfn $RELEASE_DIR $APP_DIR/current
 print_step "Installing dependencies..."
 cd $APP_DIR/current
 
-# Backend dependencies
+# Backend dependencies (production only)
 print_step "Installing backend dependencies..."
 cd $APP_DIR/current/backend
 sudo -u $APP_USER npm install --production
 
-# Frontend dependencies
+# Frontend dependencies (all dependencies needed for build)
 print_step "Installing frontend dependencies..."
 cd $APP_DIR/current/frontend
-sudo -u $APP_USER npm install --production
+sudo -u $APP_USER npm install
 
 # Step 9: Build applications
 print_step "Building applications..."
@@ -133,6 +133,11 @@ sudo -u $APP_USER npm run build
 # Build backend (if TypeScript)
 cd $APP_DIR/current/backend
 sudo -u $APP_USER npm run build || echo "No build script found for backend"
+
+# Step 9.5: Clean up frontend devDependencies after build
+print_step "Cleaning up frontend devDependencies..."
+cd $APP_DIR/current/frontend
+sudo -u $APP_USER npm prune --production
 
 # Step 10: Setup PostgreSQL database
 print_step "Setting up PostgreSQL database..."
