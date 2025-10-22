@@ -15,6 +15,7 @@ const isHTTPS = process.env.AUTH_COOKIE_SECURE === 'true' ||
 
 const COOKIE_SAMESITE: 'none' | 'lax' | 'strict' = (process.env.AUTH_COOKIE_SAMESITE as any) || (isHTTPS ? 'none' : 'lax');
 const COOKIE_SECURE = isHTTPS;
+const COOKIE_DOMAIN = process.env.AUTH_COOKIE_DOMAIN;
 
 const logger = createComponentLogger('AuthController');
 
@@ -32,8 +33,10 @@ export async function signup(req: Request, res: Response) {
     
     const user = await createUser(email, password, name);
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    // set HttpOnly cookie (configurable SameSite / Secure)
-    res.cookie('orcheplan_token', token, { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE });
+    // set HttpOnly cookie (configurable SameSite / Secure / Domain)
+    const cookieOptions: any = { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE };
+    if (COOKIE_DOMAIN) cookieOptions.domain = COOKIE_DOMAIN;
+    res.cookie('orcheplan_token', token, cookieOptions);
     // Return the token in the JSON body for API clients (needed for testing and API access)
     res.json({ 
       token,
@@ -85,8 +88,10 @@ export async function login(req: Request, res: Response) {
     await lockoutService.recordSuccessfulLogin(email);
     
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    // set HttpOnly cookie (configurable SameSite / Secure)
-    res.cookie('orcheplan_token', token, { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE });
+    // set HttpOnly cookie (configurable SameSite / Secure / Domain)
+    const cookieOptions: any = { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE };
+    if (COOKIE_DOMAIN) cookieOptions.domain = COOKIE_DOMAIN;
+    res.cookie('orcheplan_token', token, cookieOptions);
     // Return the token in the JSON body for API clients (needed for testing and API access)
     logger.info('User login successful', { 
       userId: user.id, 
@@ -107,7 +112,9 @@ export async function login(req: Request, res: Response) {
 export async function logout(req: Request, res: Response) {
   try {
     const userId = (req as any).user?.id;
-    res.clearCookie('orcheplan_token', { sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE });
+    const clearCookieOptions: any = { sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE };
+    if (COOKIE_DOMAIN) clearCookieOptions.domain = COOKIE_DOMAIN;
+    res.clearCookie('orcheplan_token', clearCookieOptions);
     
     logger.info('User logout successful', { 
       userId,
