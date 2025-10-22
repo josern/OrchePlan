@@ -48,25 +48,23 @@ yarn.lockyarn.lock
 
 /build/build
 
-/dist/dist
+# Build & Distribution
+/dist/
+/.next/
+/out/
+.nuxt
+.vitepress/dist
 
-/.next//.next/
-
-/out//out/
-
-.nuxt.nuxt
-
-.vitepress/dist.vitepress/dist
-
+# Backend builds
 /backend/dist/
+/backend/build/
 
-/backend/build/# ===========================
-
-/frontend/.next/# Environment & Configuration
-
-/frontend/out/# ===========================
-
-/frontend/build/.env
+# Frontend builds
+/frontend/.next/
+/frontend/out/
+/frontend/build/
+/frontend/.next/standalone/
+/frontend/.turbo/
 
 *.js.map.env.local
 
