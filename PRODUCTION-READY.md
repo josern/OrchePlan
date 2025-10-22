@@ -156,7 +156,7 @@ module.exports = {
     {
       name: 'orcheplan-backend',
       cwd: './backend',
-      script: 'dist/server.js',
+      script: 'dist/src/server.js',
       instances: 2,
       exec_mode: 'cluster',
       env_file: '.env.production',

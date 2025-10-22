@@ -58,10 +58,14 @@ cp .env.production.example .env.production
 
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
-| `LOG_LEVEL` | No | Logging level | `debug`, `info`, `warn`, `error` |
+| `LOG_LEVEL` | No | Logging level | `error`, `warn`, `info`, `http`, `verbose`, `debug`, `silly` |
 | `LOG_CONSOLE` | No | Enable console logging | `true`, `false` |
 | `LOG_FILE` | No | Enable file logging | `true`, `false` |
 | `LOG_DIR` | No | Log file directory | `./logs` |
+| `LOG_MAX_SIZE` | No | Maximum log file size | `10m`, `100k`, `1g` |
+| `LOG_MAX_FILES` | No | Number of log files to keep | `5`, `10` |
+| `LOG_DATE_PATTERN` | No | Log rotation pattern | `YYYY-MM-DD`, `YYYY-MM-DD-HH` |
+| `LOG_FORMAT` | No | Log output format | `json`, `simple`, `combined` |
 
 ## Deployment Scenarios
 
@@ -126,6 +130,56 @@ AUTH_COOKIE_DOMAIN=orcheplan.com
 # ✅ Works for localhost development
 # AUTH_COOKIE_DOMAIN=   # Leave empty
 ```
+
+## Logging Configuration
+
+### Log Levels
+
+Available log levels (from most to least verbose):
+- `silly` - Everything (very verbose, development only)
+- `debug` - Debug information (development/testing)
+- `verbose` - Detailed operational information  
+- `http` - HTTP request/response logging
+- `info` - General information (recommended for production)
+- `warn` - Warning messages (recommended for production)
+- `error` - Error messages only (minimal logging)
+
+### Log Formats
+
+- `simple` - Human-readable format for development
+- `json` - Structured JSON format for production/parsing
+- `combined` - Combines multiple log sources
+
+### Production Logging Recommendations
+
+```bash
+# Production - Minimal but informative
+LOG_LEVEL=warn
+LOG_CONSOLE=false
+LOG_FILE=true
+LOG_FORMAT=json
+LOG_MAX_SIZE=10m
+LOG_MAX_FILES=5
+```
+
+### Development Logging Recommendations
+
+```bash
+# Development - Verbose for debugging
+LOG_LEVEL=debug
+LOG_CONSOLE=true
+LOG_FILE=true
+LOG_FORMAT=simple
+LOG_MAX_SIZE=50m
+LOG_MAX_FILES=3
+```
+
+### Log File Management
+
+- **Rotation**: Logs rotate daily (`LOG_DATE_PATTERN=YYYY-MM-DD`) or when size limit is reached
+- **Retention**: Keep specified number of files (`LOG_MAX_FILES`)
+- **Compression**: Old log files are automatically compressed
+- **Location**: All logs stored in `LOG_DIR` (default: `./logs`)
 
 ## Security Best Practices
 

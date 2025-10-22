@@ -140,7 +140,22 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With', 'X-CSRF-Token'],
+    allowedHeaders: [
+        'Content-Type', 
+        'Authorization', 
+        'Accept', 
+        'Origin', 
+        'X-Requested-With', 
+        'X-CSRF-Token',
+        'Cache-Control',
+        'Connection',
+        'Keep-Alive',
+        'Upgrade',
+        'Accept-Encoding',
+        'Accept-Language',
+        'User-Agent'
+    ],
+    exposedHeaders: ['Content-Type', 'Cache-Control', 'Connection'],
     optionsSuccessStatus: 200,
 }));
 

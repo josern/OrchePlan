@@ -13,7 +13,8 @@ router.use((req: Request, res: Response, next: NextFunction) => {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cache-Control');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With, X-CSRF-Token, Cache-Control, Connection, Keep-Alive, Upgrade, Accept-Encoding, Accept-Language, User-Agent');
+    res.header('Access-Control-Expose-Headers', 'Content-Type, Cache-Control, Connection');
   }
   
   // Handle preflight for SSE
