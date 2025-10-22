@@ -68,6 +68,15 @@ class RealtimeClient {
       }
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.logger.error('SSE authentication failed - user not logged in', {
+            status: response.status,
+            statusText: response.statusText
+          });
+          this.connectionFailed = true;
+          this.emit('auth_failed', { status: response.status });
+          return;
+        }
         throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
       }
 
@@ -227,9 +236,17 @@ class RealtimeClient {
       };
 
       this.eventSource.onerror = (error) => {
-        this.logger.warn('EventSource connection error', { 
-          readyState: this.eventSource?.readyState 
-        });
+        const readyState = this.eventSource?.readyState;
+        this.logger.warn('EventSource connection error', { readyState });
+        
+        // EventSource doesn't give us HTTP status codes, but we can infer auth issues
+        // If connection immediately closes, it might be auth-related
+        if (readyState === EventSource.CLOSED && this.reconnectAttempts === 0) {
+          this.logger.error('EventSource connection failed immediately - likely authentication issue');
+          this.connectionFailed = true;
+          this.emit('auth_failed', { readyState });
+          return;
+        }
         
         // If EventSource fails repeatedly, try fetch-based approach
         if (this.reconnectAttempts >= 2) {

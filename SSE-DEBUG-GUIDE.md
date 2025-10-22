@@ -63,17 +63,23 @@ curl -N -H "Accept: text/event-stream" \
 
 ## 📊 Common Issues & Solutions
 
-### Issue: No SSE connection
+### Issue: No SSE connection (HTTP 401 Unauthorized)
 ```javascript
 // Check in console:
 window.sseDebug.getInfo()
 // Look for: isConnected: false, connectionFailed: true
 ```
 
+**Most Common Cause: Authentication Issues**
+The SSE endpoint requires authentication. If you see 401 errors:
+
 **Solutions:**
-- Check network connectivity
-- Verify authentication cookies
-- Check CORS configuration
+1. **Check if user is logged in**: Refresh the page and ensure you're authenticated
+2. **Verify authentication cookies**: Check browser DevTools → Application → Cookies
+   - Should see authentication cookie for the domain
+3. **Test regular API calls**: If other API calls work, SSE should work too
+4. **Clear cookies and re-login**: Sometimes authentication state gets corrupted
+5. **Check CORS configuration**: Verify `credentials: 'include'` is working
 
 ### Issue: Connection established but no messages
 ```javascript
@@ -121,7 +127,15 @@ window.sseDebug.forceReconnect();
 window.sseDebug.getInfo()
 ```
 
-### 4. Verify Backend Stats
+### 4. Test Authentication
+```javascript
+// Test if regular authenticated API calls work
+fetch('/api/projects', { credentials: 'include' })
+  .then(r => console.log('Auth test:', r.status))
+  .catch(e => console.error('Auth failed:', e))
+```
+
+### 5. Verify Backend Stats
 ```bash
 curl https://api.orcheplan.com/realtime/health
 ```
