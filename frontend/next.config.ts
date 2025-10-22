@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
   
+  // Fix monorepo lockfile detection warning
+  outputFileTracingRoot: process.env.NODE_ENV === 'production' ? __dirname : undefined,
+  
   // Build configuration
   typescript: {
     ignoreBuildErrors: process.env.NODE_ENV === 'development',

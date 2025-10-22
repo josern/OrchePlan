@@ -103,8 +103,10 @@ print_step "Deploying application code..."
 RELEASE_DIR="$APP_DIR/releases/$(date +%Y%m%d_%H%M%S)"
 sudo -u $APP_USER mkdir -p $RELEASE_DIR
 
-# Copy current directory to release directory
+# Copy current directory to release directory (excluding root lockfile to avoid Next.js warning)
 sudo -u $APP_USER cp -r . $RELEASE_DIR/
+# Remove root package-lock.json to prevent Next.js workspace detection issues
+sudo -u $APP_USER rm -f $RELEASE_DIR/package-lock.json
 sudo -u $APP_USER ln -sfn $RELEASE_DIR $APP_DIR/current
 
 # Step 8: Install dependencies
