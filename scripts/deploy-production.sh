@@ -72,9 +72,9 @@ sudo apt update && sudo apt upgrade -y
 print_step "Installing required packages..."
 sudo apt install -y curl wget git postgresql postgresql-contrib
 
-# Step 3: Install Node.js 18.x
-print_step "Installing Node.js 18.x..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# Step 3: Install Node.js 25.x
+print_step "Installing Node.js 25.x..."
+curl -fsSL https://deb.nodesource.com/setup_25.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # Step 4: Install PM2 globally
