@@ -32,6 +32,7 @@
     "@dr.pogodin/csurf": "^1.16.6",
     "@prisma/client": "^6.17.1",
     "@types/csurf": "^1.11.5",
+    "axios": "^1.12.2",
     "bcrypt": "^5.1.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
