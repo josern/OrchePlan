@@ -69,4 +69,44 @@ router.get('/test', (req: Request, res: Response) => {
   });
 });
 
+// Test broadcast endpoint for debugging (only in development)
+router.post('/test-broadcast', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Test broadcasts disabled in production' });
+  }
+  
+  const { projectId, type = 'task_update', action = 'updated' } = req.body;
+  
+  if (!projectId) {
+    return res.status(400).json({ error: 'projectId required' });
+  }
+  
+  // Send test message
+  const testEvent = {
+    type,
+    action,
+    data: {
+      id: 'test-' + Date.now(),
+      projectId,
+      title: 'Test SSE Message',
+      description: 'This is a test message for SSE debugging'
+    },
+    timestamp: new Date().toISOString()
+  };
+  
+  const stats = realtimeService.getStats();
+  
+  // Broadcast test message
+  if (type === 'task_update') {
+    realtimeService.broadcastTaskUpdate(testEvent.data, action as any);
+  }
+  
+  res.json({
+    message: 'Test broadcast sent',
+    event: testEvent,
+    stats,
+    timestamp: new Date().toISOString()
+  });
+});
+
 export default router;

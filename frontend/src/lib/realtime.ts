@@ -355,8 +355,41 @@ class RealtimeClient {
       reconnectDelay: this.reconnectDelay,
       eventSourceState: this.eventSource?.readyState,
       eventSourceStateText: this.eventSource ? this.getEventSourceStateText(this.eventSource.readyState) : 'N/A',
-      lastConnectAttempt: new Date().toISOString()
+      lastConnectAttempt: new Date().toISOString(),
+      clientCount: this.listeners.size,
+      listenedEvents: Array.from(this.listeners.keys())
     };
+  }
+
+  // Add debugging info to window for production troubleshooting
+  enableProductionDebug() {
+    (window as any).sseDebug = {
+      getInfo: () => this.getConnectionInfo(),
+      forceReconnect: () => this.forceReconnect(),
+      testMessage: (data: any) => this.handleMessage(data),
+      getStats: () => ({
+        totalListeners: this.listeners.size,
+        eventTypes: Array.from(this.listeners.keys()),
+        listenerCounts: Array.from(this.listeners.entries()).map(([event, listeners]) => ({
+          event,
+          count: listeners.size
+        }))
+      })
+    };
+    
+    // Add production-safe event logging
+    const originalHandleMessage = this.handleMessage.bind(this);
+    this.handleMessage = (data: any) => {
+      (window as any).lastSSEMessage = {
+        timestamp: new Date().toISOString(),
+        type: data.type,
+        action: data.action,
+        hasData: !!data.data
+      };
+      return originalHandleMessage(data);
+    };
+    
+    return 'SSE Debug enabled. Use window.sseDebug.getInfo() to check status';
   }
 
   private getEventSourceStateText(state: number): string {
