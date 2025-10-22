@@ -1,5 +1,8 @@
+import { createComponentLogger } from './logger';
+
 // Frontend SSE client for real-time updates
 class RealtimeClient {
+  private logger = createComponentLogger('RealtimeClient');
   private eventSource: EventSource | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3; // Reduced from 5 to fail faster
@@ -28,7 +31,7 @@ class RealtimeClient {
       this.connectWithEventSource(url);
       
     } catch (error) {
-      console.warn('[SSE] Error creating EventSource - SSE not available:', error);
+      this.logger.error('SSE connection creation failed', {}, error);
       this.connectionFailed = true;
       this.emit('connection_failed', { reason: 'creation_error' });
     }
@@ -40,12 +43,12 @@ class RealtimeClient {
     let timeoutId: NodeJS.Timeout | null = null;
     
     try {
-      console.log('[SSE] Attempting fetch-based connection to:', url);
+      this.logger.debug('Attempting fetch-based connection', { url });
       
       // Set a connection timeout
       const controller = new AbortController();
       timeoutId = setTimeout(() => {
-        console.warn('[SSE] Fetch connection timeout');
+        this.logger.warn('Fetch connection timeout');
         controller.abort();
       }, 30000); // 30 second timeout
       
@@ -72,7 +75,7 @@ class RealtimeClient {
         throw new Error('No response body for SSE stream');
       }
 
-      console.log('[SSE] Successfully connected, processing stream...');
+      this.logger.debug('Fetch connection established, processing stream');
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.connectionFailed = false;
@@ -91,13 +94,13 @@ class RealtimeClient {
         clearTimeout(timeoutId);
       }
       
-      console.warn('[SSE] Fetch-based connection failed:', error);
+      this.logger.warn('Fetch-based connection failed', {}, error);
       // Clean up reader if it exists
       if (reader) {
         try {
           reader.releaseLock();
         } catch (releaseError) {
-          console.warn('[SSE] Error releasing reader lock:', releaseError);
+          this.logger.debug('Error releasing reader lock', {}, releaseError);
         }
       }
       
@@ -118,14 +121,14 @@ class RealtimeClient {
         try {
           result = await reader.read();
         } catch (readError) {
-          console.error('[SSE] Stream read error:', readError);
+          this.logger.error('Stream read error', {}, readError);
           throw readError;
         }
 
         const { done, value } = result;
         
         if (done) {
-          console.log('[SSE] Stream ended normally');
+          this.logger.debug('Stream ended normally');
           this.handleDisconnect();
           break;
         }
@@ -135,7 +138,7 @@ class RealtimeClient {
         try {
           chunk = decoder.decode(value, { stream: true });
         } catch (decodeError) {
-          console.error('[SSE] Failed to decode stream chunk:', decodeError);
+          this.logger.error('Failed to decode stream chunk', {}, decodeError);
           continue;
         }
 
@@ -162,7 +165,7 @@ class RealtimeClient {
                 this.handleMessage(data);
               }
             } catch (parseError) {
-              console.warn('[SSE] Failed to parse message:', trimmedLine, parseError);
+              this.logger.warn('Failed to parse SSE message', { message: trimmedLine }, parseError);
             }
           }
           // Handle other SSE fields (event, id, retry)
@@ -185,14 +188,14 @@ class RealtimeClient {
         }
       }
     } catch (streamError) {
-      console.error('[SSE] Stream processing error:', streamError);
+      this.logger.error('Stream processing error', {}, streamError);
       throw streamError; // Re-throw to be handled by caller
     } finally {
       // Always try to release the reader lock
       try {
         reader.releaseLock();
       } catch (lockError) {
-        console.warn('[SSE] Failed to release reader lock:', lockError);
+        this.logger.debug('Failed to release reader lock', {}, lockError);
       }
     }
   }
@@ -200,14 +203,14 @@ class RealtimeClient {
   // Fallback to standard EventSource
   private connectWithEventSource(url: string) {
     try {
-      console.log('[SSE] Attempting EventSource connection to:', url);
+      this.logger.debug('Attempting EventSource connection', { url });
       
       this.eventSource = new EventSource(url, {
         withCredentials: true
       });
 
       this.eventSource.onopen = () => {
-        console.log('[SSE] EventSource connection established');
+        this.logger.debug('EventSource connection established');
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
@@ -219,17 +222,18 @@ class RealtimeClient {
           const data = JSON.parse(event.data);
           this.handleMessage(data);
         } catch (error) {
-          console.error('[SSE] Error parsing EventSource message:', error, 'Raw data:', event.data);
+          this.logger.error('Error parsing EventSource message', { rawData: event.data }, error);
         }
       };
 
       this.eventSource.onerror = (error) => {
-        console.warn('[SSE] EventSource error:', error);
-        console.log('[SSE] EventSource readyState:', this.eventSource?.readyState);
+        this.logger.warn('EventSource connection error', { 
+          readyState: this.eventSource?.readyState 
+        });
         
         // If EventSource fails repeatedly, try fetch-based approach
         if (this.reconnectAttempts >= 2) {
-          console.log('[SSE] EventSource failing repeatedly, trying fetch-based connection...');
+          this.logger.info('EventSource failing, attempting fetch fallback');
           this.disconnect();
           const url = `${this.baseUrl}/realtime/events`;
           this.connectWithFetch(url);
@@ -239,7 +243,7 @@ class RealtimeClient {
       };
 
     } catch (error) {
-      console.error('[SSE] EventSource creation failed:', error);
+      this.logger.error('EventSource creation failed', {}, error);
       this.connectionFailed = true;
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.emit('connection_failed', { reason: 'eventsource_error', error: errorMessage });
@@ -248,22 +252,23 @@ class RealtimeClient {
 
   // Handle disconnection and reconnection logic
   private handleDisconnect() {
-    const timestamp = new Date().toISOString();
-    console.warn(`[SSE] Connection lost at ${timestamp}, attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts}`);
+    this.logger.warn('Connection lost, attempting reconnection', {
+      attempt: this.reconnectAttempts + 1,
+      maxAttempts: this.maxReconnectAttempts
+    });
     this.isConnected = false;
     
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       const delay = Math.min(this.reconnectDelay, 30000); // Cap at 30 seconds
-      console.log(`[SSE] Reconnecting in ${delay}ms...`);
       
       setTimeout(() => {
         this.reconnectAttempts++;
         this.reconnectDelay *= 2;
-        console.log('[SSE] Attempting reconnection...');
+        this.logger.debug('Attempting reconnection', { attempt: this.reconnectAttempts });
         this.connect();
       }, delay);
     } else {
-      console.error('[SSE] Max reconnection attempts reached, giving up');
+      this.logger.error('Max reconnection attempts reached, connection failed permanently');
       this.connectionFailed = true;
       this.disconnect();
       this.emit('connection_failed', { reason: 'max_attempts_reached' });
@@ -281,7 +286,6 @@ class RealtimeClient {
 
   // Handle incoming messages
   private handleMessage(data: any) {
-    
     switch (data.type) {
       case 'connected':
         break;
@@ -325,7 +329,7 @@ class RealtimeClient {
         try {
           callback(data);
         } catch (error) {
-          console.error(`[SSE] Error in event listener for ${event}:`, error);
+          this.logger.error('Error in event listener', { event }, error);
         }
       });
     }
@@ -366,7 +370,7 @@ class RealtimeClient {
 
   // Manual reconnection method for debugging
   forceReconnect() {
-    console.log('[SSE] Manual reconnection requested');
+    this.logger.info('Manual reconnection requested');
     this.disconnect();
     this.reconnectAttempts = 0;
     this.connectionFailed = false;

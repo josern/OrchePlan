@@ -164,12 +164,13 @@ class RealtimeService {
       }
     });
 
-    if (sentCount > 0) {
-      logger.debug('Event broadcasted to clients', {
+    // Only log if no events were sent (potential issue)
+    if (sentCount === 0 && this.clients.size > 0) {
+      logger.warn('No clients received event for project', {
         eventType: event.type,
         projectId,
-        clientCount: sentCount,
-        action: event.action
+        action: event.action,
+        totalClients: this.clients.size
       });
     }
   }
