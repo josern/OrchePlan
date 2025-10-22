@@ -1,146 +1,296 @@
-# OrchePlan - Comprehensive .gitignore# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# OrchePlan - Comprehensive .gitignore# OrchePlan - Comprehensive .gitignore
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 
 
-# ===========================# dependencies
+# ===========================# ===========================
 
-# Node.js & NPM/node_modules
+# Node.js Dependencies# Node.js Dependencies
 
-# ===========================/.pnp
+# ===========================# ===========================
 
-node_modules/.pnp.js
+node_modules/node_modules/
 
-npm-debug.log*
+*/node_modules/*/node_modules/
 
-yarn-debug.log*# testing
+**/node_modules/**/node_modules/
 
-yarn-error.log*/coverage
+npm-debug.log*npm-debug.log*
 
-lerna-debug.log*
+yarn-debug.log*yarn-debug.log*
 
-.pnpm-debug.log*# next.js
+yarn-error.log*yarn-error.log*
 
-/.next/
+lerna-debug.log*lerna-debug.log*
 
-# Dependency directories/out/
+.pnpm-debug.log*.pnpm-debug.log*
 
-jspm_packages/
+.yarn-integrity.yarn-integrity
 
-# production
 
-# ===========================/build
 
-# Environment & Configuration
+# Dependency lock files (keep package-lock.json but ignore others)# Dependency lock files (keep package-lock.json but ignore others)
 
-# ===========================# misc
+yarn.lockyarn.lock
 
-.env.DS_Store
+.pnp.pnp
 
-.env.local*.pem
+.pnp.js.pnp.js
+
+
+
+# ===========================# ===========================
+
+# Build & Distribution# Build & Distribution
+
+# ===========================# ===========================
+
+/build/build
+
+/dist/dist
+
+/.next//.next/
+
+/out//out/
+
+.nuxt.nuxt
+
+.vitepress/dist.vitepress/dist
+
+/backend/dist/
+
+/backend/build/# ===========================
+
+/frontend/.next/# Environment & Configuration
+
+/frontend/out/# ===========================
+
+/frontend/build/.env
+
+*.js.map.env.local
 
 .env.development.local
 
-.env.test.local# debug
+# ===========================.env.test.local
 
-.env.production.localnpm-debug.log*
+# Environment & Configuration.env.production.local
 
-.env.coderyarn-debug.log*
+# ===========================.env.coder
 
-.env.testyarn-error.log*
+.env.env.test
 
+.env.local
 
+.env.development.local# ===========================
 
-# ===========================# local env files
+.env.test.local# Operating System
+
+.env.production.local# ===========================
+
+.env.coder.DS_Store
+
+.env.test.DS_Store?
+
+._*
+
+# ===========================.Spotlight-V100
+
+# Testing.Trashes
+
+# ===========================ehthumbs.db
+
+/coverageThumbs.db
+
+/.nyc_output*.pem
+
+*.lcov
+
+.coverage
+
+test-results/
+
+playwright-report/# ===========================# local env files
+
+blob-report/
 
 # Next.js Frontend.env
 
-# ===========================.env.local
+# ===========================
 
-/.next/.env.development.local
+# Logs# ===========================.env.local
 
-/out/.env.test.local
+# ===========================
 
-.next.tar.gz.env.production.local
+logs/.next/.env.development.local
+
+*.log
+
+npm-debug.log*/out/.env.test.local
+
+yarn-debug.log*
+
+yarn-error.log*.next.tar.gz.env.production.local
+
+lerna-debug.log*
+
+.pnpm-debug.log*
+
+/backend/logs/
+
+*.log.*# TypeScript build info# vercel
 
 
 
-# TypeScript build info# vercel
+# ===========================*.tsbuildinfo.vercel
 
-*.tsbuildinfo.vercel
+# Runtime & Cache
+
+# ===========================next-env.d.ts
+
+.cache
+
+.next# local install
+
+.turbo
+
+.vercel# Static exports/.firebase/
+
+.firebase/
+
+.firebaserc/frontend/.next/.aiexclude
+
+apphosting.yaml
+
+.aiexclude/frontend/out/.firebaserc
+
+
+
+# ===========================/frontend/build/apphosting.yaml
+
+# Security & Authentication
+
+# ===========================# ===========================
+
+*.pem# Backend Build Output
+
+*.key# ===========================
+
+*.crt/backend/dist/
+
+*.p12/backend/build/
+
+*.pfx*.js.map
+
+auth-cookies.txt
+
+cookies.txt# ===========================
+
+test-cookies.txt# Database & Prisma
+
+# ===========================
+
+# ===========================/backend/prisma/migrations/
+
+# Database*.db
+
+# ===========================*.db-journal
+
+*.db*.sqlite
+
+*.db-journal*.sqlite3
+
+*.sqlite
+
+*.sqlite3# ===========================
+
+/backend/prisma/migrations/# Logs & Runtime
+
+# ===========================
+
+# ===========================logs/
+
+# Operating System*.log
+
+# ===========================*.log.*
+
+.DS_Storepids
+
+.DS_Store?*.pid
+
+._**.seed
+
+.Spotlight-V100*.pid.lock
+
+.Trashes.grunt
+
+ehthumbs.dblib-cov
+
+Thumbs.dbcoverage/
+
+.nyc_output
+
+# ===========================.coverage
+
+# IDEs & Editors*.lcov
+
+# ===========================
+
+.vscode/# Backend specific logs
+
+.idea//backend/logs/
+
+*.swpbackend/logs/*.log
+
+*.swo
+
+*~# ===========================
+
+.project# Testing
+
+.classpath# ===========================
+
+.settings/coverage/
+
+.history/.nyc_output/
+
+.idx/test-results/
+
+playwright-report/
+
+# ===========================/frontend/test-results/
+
+# Development Tools/frontend/playwright-report/
+
+# ===========================
+
+.eslintcache# Jest
+
+*.tsbuildinfo.jest-cache/
 
 next-env.d.ts
 
-# local install
-
-# Static exports/.firebase/
-
-/frontend/.next/.aiexclude
-
-/frontend/out/.firebaserc
-
-/frontend/build/apphosting.yaml
-
 # ===========================
-# Backend Build Output
-# ===========================
-/backend/dist/
-/backend/build/
-*.js.map
 
-# ===========================
-# Database & Prisma
-# ===========================
-/backend/prisma/migrations/
-*.db
-*.db-journal
-*.sqlite
-*.sqlite3
+# ===========================# Development Tools
 
-# ===========================
-# Logs & Runtime
-# ===========================
-logs/
-*.log
-*.log.*
-pids
-*.pid
-*.seed
-*.pid.lock
-.grunt
-lib-cov
-coverage/
-.nyc_output
-.coverage
-*.lcov
+# Backup & Temporary Files# ===========================
 
-# Backend specific logs
-/backend/logs/
-backend/logs/*.log
+# ===========================.vscode/settings.json
 
-# ===========================
-# Testing
-# ===========================
-coverage/
-.nyc_output/
-test-results/
-playwright-report/
-/frontend/test-results/
-/frontend/playwright-report/
+*.bak.vscode/launch.json
 
-# Jest
-.jest-cache/
+*.backup.vscode/extensions.json
 
-# ===========================
-# Development Tools
-# ===========================
-.vscode/settings.json
-.vscode/launch.json
-.vscode/extensions.json
-.idea/
-*.swp
-*.swo
-*~
+*.tmp.idea/
 
+*.temp*.swp
+
+*.orig*.swo
+
+*.rej*~
+
+core.*
 # OS generated files
 .DS_Store
 .DS_Store?
