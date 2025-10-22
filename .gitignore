@@ -70,24 +70,15 @@ yarn.lockyarn.lock
 
 .env.development.local
 
-# ===========================.env.test.local
-
-# Environment & Configuration.env.production.local
-
-# ===========================.env.coder
-
-.env.env.test
-
+# ===========================
+# Environment & Configuration  
+# ===========================
+.env
 .env.local
-
-.env.development.local# ===========================
-
-.env.test.local# Operating System
-
-.env.production.local# ===========================
-
-.env.coder.DS_Store
-
+.env.development.local
+.env.test.local
+.env.production.local
+.env.coder
 .env.test.DS_Store?
 
 ._*
