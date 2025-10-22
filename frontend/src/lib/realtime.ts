@@ -24,8 +24,8 @@ class RealtimeClient {
     try {
       const url = `${this.baseUrl}/realtime/events`;
       
-      // Try fetch-based approach first for better error handling
-      this.connectWithFetch(url);
+      // Try EventSource first as it's more stable
+      this.connectWithEventSource(url);
       
     } catch (error) {
       console.warn('[SSE] Error creating EventSource - SSE not available:', error);
@@ -36,16 +36,33 @@ class RealtimeClient {
 
     // Alternative SSE connection using fetch for better compatibility
   private async connectWithFetch(url: string) {
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     try {
       console.log('[SSE] Attempting fetch-based connection to:', url);
+      
+      // Set a connection timeout
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => {
+        console.warn('[SSE] Fetch connection timeout');
+        controller.abort();
+      }, 30000); // 30 second timeout
       
       const response = await fetch(url, {
         credentials: 'include',
         headers: {
           'Accept': 'text/event-stream',
           'Cache-Control': 'no-cache'
-        }
+        },
+        signal: controller.signal
       });
+
+      // Clear timeout on successful connection
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
 
       if (!response.ok) {
         throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
@@ -61,92 +78,122 @@ class RealtimeClient {
       this.connectionFailed = false;
 
       // Use ReadableStream to process SSE data
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
       let buffer = '';
 
-      const processStream = async () => {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            
-            if (done) {
-              console.log('[SSE] Stream ended normally');
-              this.handleDisconnect();
-              break;
-            }
-
-            // Safely decode the stream chunk
-            let chunk: string;
-            try {
-              chunk = decoder.decode(value, { stream: true });
-            } catch (decodeError) {
-              console.error('[SSE] Failed to decode stream chunk:', decodeError);
-              continue;
-            }
-
-            buffer += chunk;
-            
-            // Process complete messages (SSE format: "data: {}\n\n")
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-            for (const line of lines) {
-              const trimmedLine = line.trim();
-              
-              // Skip empty lines and comments
-              if (!trimmedLine || trimmedLine.startsWith(':')) {
-                continue;
-              }
-              
-              // Handle SSE data lines
-              if (trimmedLine.startsWith('data: ')) {
-                try {
-                  const jsonData = trimmedLine.slice(6).trim();
-                  if (jsonData) {
-                    const data = JSON.parse(jsonData);
-                    this.handleMessage(data);
-                  }
-                } catch (parseError) {
-                  console.warn('[SSE] Failed to parse message:', trimmedLine, parseError);
-                }
-              }
-              // Handle other SSE fields (event, id, retry)
-              else if (trimmedLine.includes(': ')) {
-                const [field, ...valueParts] = trimmedLine.split(': ');
-                const value = valueParts.join(': ');
-                
-                switch (field) {
-                  case 'event':
-                    // Handle event type if needed
-                    break;
-                  case 'id':
-                    // Handle message ID if needed
-                    break;
-                  case 'retry':
-                    // Handle retry interval if needed
-                    break;
-                }
-              }
-            }
-          }
-        } catch (streamError) {
-          console.error('[SSE] Stream processing error:', streamError);
-          this.handleDisconnect();
-        } finally {
-          try {
-            reader.releaseLock();
-          } catch (lockError) {
-            console.warn('[SSE] Failed to release reader lock:', lockError);
-          }
-        }
-      };
-
-      processStream();
+      // Process stream in a separate function to better handle errors
+      await this.processSSEStream(reader, decoder, buffer);
 
     } catch (error) {
-      console.warn('[SSE] Fetch-based connection failed, trying EventSource...', error);
-      this.connectWithEventSource(url);
+      // Clear timeout on error
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
+      console.warn('[SSE] Fetch-based connection failed:', error);
+      // Clean up reader if it exists
+      if (reader) {
+        try {
+          reader.releaseLock();
+        } catch (releaseError) {
+          console.warn('[SSE] Error releasing reader lock:', releaseError);
+        }
+      }
+      
+      // If fetch fails, fall back to regular reconnection logic
+      this.handleDisconnect();
+    }
+  }
+
+  // Separate method to handle SSE stream processing
+  private async processSSEStream(
+    reader: ReadableStreamDefaultReader<Uint8Array>, 
+    decoder: TextDecoder, 
+    buffer: string
+  ) {
+    try {
+      while (true) {
+        let result;
+        try {
+          result = await reader.read();
+        } catch (readError) {
+          console.error('[SSE] Stream read error:', readError);
+          throw readError;
+        }
+
+        const { done, value } = result;
+        
+        if (done) {
+          console.log('[SSE] Stream ended normally');
+          this.handleDisconnect();
+          break;
+        }
+
+        // Safely decode the stream chunk
+        let chunk: string;
+        try {
+          chunk = decoder.decode(value, { stream: true });
+        } catch (decodeError) {
+          console.error('[SSE] Failed to decode stream chunk:', decodeError);
+          continue;
+        }
+
+        buffer += chunk;
+        
+        // Process complete messages (SSE format: "data: {}\n\n")
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          
+          // Skip empty lines and comments
+          if (!trimmedLine || trimmedLine.startsWith(':')) {
+            continue;
+          }
+          
+          // Handle SSE data lines
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const jsonData = trimmedLine.slice(6).trim();
+              if (jsonData) {
+                const data = JSON.parse(jsonData);
+                this.handleMessage(data);
+              }
+            } catch (parseError) {
+              console.warn('[SSE] Failed to parse message:', trimmedLine, parseError);
+            }
+          }
+          // Handle other SSE fields (event, id, retry)
+          else if (trimmedLine.includes(': ')) {
+            const [field, ...valueParts] = trimmedLine.split(': ');
+            const value = valueParts.join(': ');
+            
+            switch (field) {
+              case 'event':
+                // Handle event type if needed
+                break;
+              case 'id':
+                // Handle message ID if needed
+                break;
+              case 'retry':
+                // Handle retry interval if needed
+                break;
+            }
+          }
+        }
+      }
+    } catch (streamError) {
+      console.error('[SSE] Stream processing error:', streamError);
+      throw streamError; // Re-throw to be handled by caller
+    } finally {
+      // Always try to release the reader lock
+      try {
+        reader.releaseLock();
+      } catch (lockError) {
+        console.warn('[SSE] Failed to release reader lock:', lockError);
+      }
     }
   }
 
@@ -179,7 +226,16 @@ class RealtimeClient {
       this.eventSource.onerror = (error) => {
         console.warn('[SSE] EventSource error:', error);
         console.log('[SSE] EventSource readyState:', this.eventSource?.readyState);
-        this.handleDisconnect();
+        
+        // If EventSource fails repeatedly, try fetch-based approach
+        if (this.reconnectAttempts >= 2) {
+          console.log('[SSE] EventSource failing repeatedly, trying fetch-based connection...');
+          this.disconnect();
+          const url = `${this.baseUrl}/realtime/events`;
+          this.connectWithFetch(url);
+        } else {
+          this.handleDisconnect();
+        }
       };
 
     } catch (error) {
