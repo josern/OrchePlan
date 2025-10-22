@@ -8,16 +8,13 @@ This setup deploys all components on the same server:
 - **Frontend**: Next.js application (port 3000)
 - **Backend**: Node.js/Express API (port 3001) 
 - **Database**: PostgreSQL (local instance)
-- **Reverse Proxy**: Nginx (port 80/443)
 - **Process Management**: PM2 with clustering
-- **SSL**: Let's Encrypt certificates
 
 ## 🚀 **Quick Start Deployment**
 
 ### Prerequisites
 - Ubuntu/Debian server (18.04+ recommended)
 - Root/sudo access
-- Domain name pointed to your server
 - Minimum 2GB RAM, 20GB storage
 
 ### Automated Deployment
@@ -31,13 +28,12 @@ bash scripts/deploy-production.sh
 ```
 
 The script will:
-1. Install Node.js 18.x, PostgreSQL, Nginx, PM2
+1. Install Node.js 18.x, PostgreSQL, PM2
 2. Create application user and directories
 3. Build and install the application
 4. Configure database and environment files
-5. Setup nginx reverse proxy
-6. Start services with PM2
-7. Configure SSL certificates
+5. Start services with PM2
+6. Setup automated backups and monitoring
 
 ## 📋 **Manual Configuration Steps**
 
@@ -58,11 +54,11 @@ JWT_SECRET=your-super-secure-jwt-secret-min-32-chars
 SESSION_SECRET=your-super-secure-session-secret-min-32-chars
 
 # CORS
-FRONTEND_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+FRONTEND_ORIGINS=http://your-server-ip:3000
 
 # Auth & Security
-AUTH_COOKIE_SECURE=true
-AUTH_COOKIE_SAME_SITE=strict
+AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_SAME_SITE=lax
 
 # Performance
 NODE_OPTIONS=--max-old-space-size=2048
@@ -75,52 +71,38 @@ LOG_TO_FILE=true
 **Frontend** (`/opt/orcheplan/current/frontend/.env.production`):
 ```bash
 NODE_ENV=production
-NEXT_PUBLIC_API_URL=https://yourdomain.com/api
+NEXT_PUBLIC_API_URL=http://your-server-ip:3001
 ```
 
-### 2. Update Domain in Nginx
-
-Edit `/etc/nginx/sites-available/orcheplan`:
-```nginx
-server_name yourdomain.com www.yourdomain.com;
-```
-
-### 3. Configure SSL Certificate
-```bash
-sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
-```
-
-### 4. Restart Services
+### 2. Restart Services
 ```bash
 sudo -u orcheplan pm2 restart all
-sudo systemctl reload nginx
 ```
 
 ## 🔧 **Production Architecture**
 
 ```
-Internet → Nginx (80/443) → PM2 Cluster → Node.js Apps
-                         ↓
-                   PostgreSQL Database
+Internet → PM2 Cluster → Node.js Apps
+                    ↓
+              PostgreSQL Database
 ```
 
-- **Nginx**: SSL termination, reverse proxy, static file serving, rate limiting
 - **PM2**: Process management, clustering, auto-restart, log rotation
-- **Backend**: Express.js API with security middleware
-- **Frontend**: Next.js with static generation and server-side rendering
+- **Backend**: Express.js API with security middleware (port 3001)
+- **Frontend**: Next.js with static generation and server-side rendering (port 3000)
 - **Database**: PostgreSQL with connection pooling
 
 ## 🛡️ **Security Features**
 
-- ✅ **SSL/TLS encryption** (Let's Encrypt)
 - ✅ **Security headers** (HSTS, CSP, X-Frame-Options)
 - ✅ **Rate limiting** (API and authentication endpoints)
 - ✅ **CSRF protection** with secure tokens
 - ✅ **Input validation** and sanitization
 - ✅ **Account lockout** after failed attempts
-- ✅ **Secure cookies** (HttpOnly, Secure, SameSite)
 - ✅ **SQL injection prevention** (Prisma ORM)
 - ✅ **XSS protection** with Content Security Policy
+
+**Note**: For production environments with public access, consider adding a reverse proxy (nginx/Apache) for SSL termination and additional security features.
 
 ## 📊 **Monitoring & Maintenance**
 
@@ -132,9 +114,6 @@ sudo -u orcheplan pm2 status
 # View logs
 sudo -u orcheplan pm2 logs
 
-# Nginx status
-sudo systemctl status nginx
-
 # Database status
 sudo systemctl status postgresql
 ```
@@ -142,11 +121,8 @@ sudo systemctl status postgresql
 ### Health Checks
 ```bash
 # Application health endpoints
-curl -f https://yourdomain.com/api/health
-curl -f https://yourdomain.com/health
-
-# Check SSL certificate
-curl -I https://yourdomain.com
+curl -f http://your-server-ip:3001/api/health
+curl -f http://your-server-ip:3000/health
 ```
 
 ### Log Monitoring
@@ -154,11 +130,8 @@ curl -I https://yourdomain.com
 # Application logs
 sudo -u orcheplan pm2 logs --lines 100
 
-# Nginx access logs
-sudo tail -f /var/log/nginx/access.log
-
 # System logs
-sudo journalctl -u nginx -f
+sudo journalctl -u postgresql -f
 ```
 
 ## 🔄 **Updates & Deployments**
@@ -206,16 +179,6 @@ sudo -u postgres psql -c "SELECT version();"
 sudo -u orcheplan psql $DATABASE_URL -c "SELECT 1;"
 ```
 
-**SSL certificate issues:**
-```bash
-# Renew certificates
-sudo certbot renew --dry-run
-sudo certbot renew
-
-# Check certificate status
-sudo certbot certificates
-```
-
 **High memory usage:**
 ```bash
 # Monitor memory usage
@@ -244,11 +207,12 @@ sudo -u orcheplan pm2 scale orcheplan-backend 4
 
 For high-traffic deployments, consider:
 
-1. **Database scaling**: Read replicas, connection pooling
-2. **Application scaling**: Multiple server instances with load balancer
-3. **CDN**: Static asset delivery
-4. **Caching**: Redis for session storage and caching
-5. **Monitoring**: Prometheus + Grafana for metrics
+1. **Reverse Proxy**: Add nginx/Apache for SSL, caching, and load balancing
+2. **Database scaling**: Read replicas, connection pooling
+3. **Application scaling**: Multiple server instances with load balancer
+4. **CDN**: Static asset delivery
+5. **Caching**: Redis for session storage and caching
+6. **Monitoring**: Prometheus + Grafana for metrics
 
 ## 🔐 **Backup Strategy**
 
@@ -285,11 +249,15 @@ sudo tar -czf orcheplan-backup-$(date +%Y%m%d).tar.gz /opt/orcheplan/current
 
 Your OrchePlan application is now running in production with:
 - ✅ High availability with PM2 clustering
-- ✅ SSL encryption and security headers
-- ✅ Automated backups and monitoring
 - ✅ Production-optimized configuration
+- ✅ Automated backups and monitoring
 - ✅ Zero-downtime deployment capability
+- ✅ Security middleware and protection
 
-**Access your application at:** https://yourdomain.com
+**Access your application at:** 
+- Frontend: http://your-server-ip:3000
+- Backend API: http://your-server-ip:3001
 
 For ongoing maintenance, monitor the logs and health endpoints regularly.
+
+**Security Note**: This configuration runs applications directly without SSL. For production environments accessible from the internet, consider adding a reverse proxy (nginx/Apache) with SSL certificates for enhanced security.
