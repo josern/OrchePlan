@@ -6,6 +6,7 @@ import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Leaf } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ComponentErrorBoundary } from '@/components/error-boundary';
 
 const LoginForm = dynamic(() => import('@/components/auth/login-form').then(mod => mod.LoginForm), { 
     ssr: false,
@@ -56,7 +57,9 @@ export default function LoginPage() {
         </div>
       </div>
       <div className="flex items-center justify-center p-8 bg-background">
-        <LoginForm />
+        <ComponentErrorBoundary>
+          <LoginForm />
+        </ComponentErrorBoundary>
       </div>
     </div>
   );

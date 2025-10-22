@@ -8,6 +8,7 @@ import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import SignUpForm from '@/components/auth/signup-form';
+import { ComponentErrorBoundary } from '@/components/error-boundary';
 
 export default function SignUpPage() {
   const loginImage = PlaceHolderImages.find(p => p.id === 'login-background');
@@ -23,7 +24,9 @@ export default function SignUpPage() {
                 </Link>
                 <p className="text-muted-foreground">Create your account to start collaborating.</p>
             </div>
-            <SignUpForm />
+            <ComponentErrorBoundary>
+                <SignUpForm />
+            </ComponentErrorBoundary>
              <div className="mt-4 text-center text-sm">
                 Already have an account?{" "}
                 <Link href="/login" className="underline">

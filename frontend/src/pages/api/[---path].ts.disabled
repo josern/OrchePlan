@@ -1,0 +1,9 @@
+// This file disables the Next.js API proxy since we're using direct backend URLs
+// If you need to re-enable the proxy, rename this file to [---path].ts
+
+export default function handler() {
+  return new Response('API proxy disabled - using direct backend URLs', { 
+    status: 410,
+    headers: { 'Content-Type': 'text/plain' }
+  });
+}

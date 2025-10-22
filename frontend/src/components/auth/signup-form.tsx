@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useApp } from '@/context/app-context';
 import { useToast } from '@/hooks/use-toast';
-import { FirebaseError } from 'firebase/app';
+import { logger } from '@/lib/logger';
 
 
 const formSchema = z.object({
@@ -48,20 +48,34 @@ export default function SignUpForm() {
         router.push('/dashboard');
     } catch (error) {
         let description = 'There was a problem creating your account.';
-        if (error instanceof FirebaseError) {
-          if (error.code === 'auth/operation-not-allowed') {
-            description = 'Email/Password sign-in is not enabled. Please enable it in your Firebase console under Authentication > Sign-in method.';
-          } else if (error.code === 'auth/email-already-in-use') {
-            description = 'This email address is already in use. Please use a different email or sign in.';
-          }
+        
+        // Extract error message from backend response
+        const errAny = error as any;
+        if (errAny?.body?.error) {
+            description = errAny.body.error;
+        } else if (errAny?.message) {
+            description = errAny.message;
         }
         
         toast({
             variant: 'destructive',
-            title: 'Uh oh! Something went wrong.',
+            title: 'Sign Up Failed',
             description: description,
         });
-        console.error('Sign up error:', error);
+        
+        // Log signup errors appropriately - expected errors get debug level
+        if (errAny?.isExpected || errAny?.status === 400 || errAny?.status === 409) {
+            logger.debug('Signup form error - user input issue', {
+                action: 'signup_form_submission',
+                errorType: 'user_input_error',
+                message: description
+            });
+        } else {
+            logger.error('Signup form error - unexpected', {
+                action: 'signup_form_submission',
+                errorType: 'unexpected_error'
+            }, error);
+        }
     }
   }
 

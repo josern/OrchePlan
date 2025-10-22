@@ -1,14 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Task, TaskStatus, Project, User, TaskStatusOption } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import TaskItem from './task-item';
-import { DndContext, closestCenter, DragEndEvent, useDroppable, UniqueIdentifier, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import CommentPromptModal from './comment-prompt-modal';
+import { ComponentErrorBoundary } from '@/components/error-boundary';
+import { DndContext, closestCenter, DragEndEvent, useDroppable, UniqueIdentifier, DragStartEvent, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useApp } from '@/context/app-context';
+import { moveTaskToStatus } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import { sortByPriorityThen } from '@/lib/priority-utils';
 
 type KanbanBoardProps = {
   tasks: Task[];
@@ -44,7 +49,13 @@ const findProjectById = (projects: Project[], id: string): Project | undefined =
     return undefined;
 };
 
-const SortableTaskItem = ({ task, onDelete, onStatusChange, projects, currentUser }: { task: Task; onDelete: (taskId: string) => void; onStatusChange: (taskId: string, status: TaskStatus) => void; projects: Project[], currentUser: User | null }) => {
+const SortableTaskItem = React.memo<{ 
+  task: Task; 
+  onDelete: (taskId: string) => void; 
+  onStatusChange: (taskId: string, status: TaskStatus) => void; 
+  projects: Project[]; 
+  currentUser: User | null; 
+}>(function SortableTaskItem({ task, onDelete, onStatusChange, projects, currentUser }) {
     const project = useMemo(() => findProjectById(projects, task.projectId), [projects, task.projectId]);
     const userRole = project && currentUser ? project.members[currentUser.id] : undefined;
     const canEdit = userRole === 'owner' || userRole === 'editor';
@@ -75,10 +86,10 @@ const SortableTaskItem = ({ task, onDelete, onStatusChange, projects, currentUse
             />
         </div>
     );
-};
+});
 
 
-const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, currentUser, isKanbanHeaderVisible }: KanbanColumnProps) => {
+const KanbanColumn = React.memo<KanbanColumnProps>(function KanbanColumn({ id, title, tasks, onDelete, onStatusChange, projects, currentUser, isKanbanHeaderVisible }) {
     const { setNodeRef } = useDroppable({ id });
 
     return (
@@ -101,14 +112,15 @@ const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, cu
                         <div className="space-y-2 p-2">
                             {tasks.length > 0 ? (
                                 tasks.map(task => (
-                                    <SortableTaskItem
-                                        key={task.id}
-                                        task={task}
-                                        onDelete={onDelete}
-                                        onStatusChange={onStatusChange}
-                                        projects={projects}
-                                        currentUser={currentUser}
-                                    />
+                                    <ComponentErrorBoundary key={task.id}>
+                                        <SortableTaskItem
+                                            task={task}
+                                            onDelete={onDelete}
+                                            onStatusChange={onStatusChange}
+                                            projects={projects}
+                                            currentUser={currentUser}
+                                        />
+                                    </ComponentErrorBoundary>
                                 ))
                             ) : (
                                 <div className="text-sm text-center text-muted-foreground py-4">
@@ -121,23 +133,42 @@ const KanbanColumn = ({ id, title, tasks, onDelete, onStatusChange, projects, cu
             </CardContent>
         </Card>
     );
-};
+});
 
 
 export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, onDelete, isKanbanHeaderVisible }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [commentModalOpen, setCommentModalOpen] = useState(false);
+  const [pendingMove, setPendingMove] = useState<{
+    taskId: string;
+    newStatusId: string;
+    statusName: string;
+    taskTitle: string;
+    isRequired: boolean;
+  } | null>(null);
   const { projects, currentUser } = useApp();
+  const { toast } = useToast();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 8,
       },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 100,
+        tolerance: 5,
+      },
     })
   );
 
   const columns = useMemo(() => {
     if (!taskStatusOptions) return [];
+    
+    // Filter out hidden status options from display
+    const visibleStatusOptions = taskStatusOptions.filter(status => !status.hidden);
+    
     const groupedTasks = taskStatusOptions.reduce((acc, status) => {
       acc[status.id] = [];
       return acc;
@@ -151,20 +182,31 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
       }
     });
 
-    return taskStatusOptions.map(status => ({
+    // Only show columns for visible (non-hidden) status options
+    return visibleStatusOptions.map(status => ({
       id: status.id,
       title: status.name,
-      tasks: groupedTasks[status.id] || [],
+      tasks: sortByPriorityThen(groupedTasks[status.id] || [], (a, b) => a.title.localeCompare(b.title)),
     }));
   }, [tasks, taskStatusOptions]);
 
-  const handleDragStart = (event: DragStartEvent) => {
+  const getGridClass = useMemo(() => {
+    const visibleColumnCount = columns.length;
+    if (visibleColumnCount === 0) return 'grid-cols-1';
+    if (visibleColumnCount === 1) return 'grid-cols-1';
+    if (visibleColumnCount === 2) return 'grid-cols-1 md:grid-cols-2';
+    if (visibleColumnCount === 3) return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
+    if (visibleColumnCount >= 4) return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+    return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+  }, [columns.length]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     const task = tasks.find(t => t.id === active.id);
     setActiveTask(task || null);
-  }
+  }, [tasks]);
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
     setActiveTask(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
@@ -172,10 +214,85 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
         const overContainer = over.data.current?.sortable.containerId || over.id;
 
         if (activeContainer !== overContainer) {
-            onStatusChange(active.id as string, overContainer as TaskStatus);
+            const taskId = active.id as string;
+            const newStatusId = overContainer as string;
+            
+            // Find the target status and task
+            const targetStatus = taskStatusOptions.find(s => s.id === newStatusId);
+            const task = tasks.find(t => t.id === taskId);
+            
+            if (targetStatus && task) {
+                // Business Rule 1: Check if parent task can move to target status
+                // Parent tasks cannot move to a status with higher order than any of their sub-tasks
+                const isSubTask = !!task.parentId;
+                if (!isSubTask) {
+                    const subTasks = tasks.filter(t => t.parentId === task.id);
+                    if (subTasks.length > 0) {
+                        const targetOrder = targetStatus.order;
+                        const hasSubTaskWithLowerOrder = subTasks.some(subTask => {
+                            const subTaskStatus = taskStatusOptions.find(s => s.id === subTask.status);
+                            return subTaskStatus && subTaskStatus.order < targetOrder;
+                        });
+                        
+                        if (hasSubTaskWithLowerOrder) {
+                            // Show error message and prevent the move
+                            toast({
+                                variant: "destructive",
+                                title: "Cannot move task",
+                                description: "Parent tasks cannot be moved to a status higher than their sub-tasks. Please complete sub-tasks first.",
+                            });
+                            return;
+                        }
+                    }
+                }
+                
+                // Check comment requirements: Required OR Optional (but not Disabled)
+                const shouldShowModal = targetStatus.requiresComment || 
+                                      (targetStatus.allowsComment && !targetStatus.requiresComment);
+                
+                if (shouldShowModal) {
+                    // Show comment modal
+                    setPendingMove({
+                        taskId,
+                        newStatusId,
+                        statusName: targetStatus.name,
+                        taskTitle: task.title,
+                        isRequired: !!targetStatus.requiresComment
+                    });
+                    setCommentModalOpen(true);
+                } else {
+                    // Move directly without comment (disabled or default)
+                    onStatusChange(taskId, newStatusId as TaskStatus);
+                }
+            } else {
+                // Fallback to direct move if status not found
+                onStatusChange(taskId, newStatusId as TaskStatus);
+            }
         }
     }
-  };
+  }, [tasks, taskStatusOptions, onStatusChange]);
+
+  const handleCommentConfirm = useCallback(async (comment: string) => {
+    if (pendingMove) {
+        try {
+            // Use the new API endpoint that handles comment requirements
+            await moveTaskToStatus(pendingMove.taskId, pendingMove.newStatusId, comment || undefined);
+            // Refresh the task list by calling the original status change handler
+            onStatusChange(pendingMove.taskId, pendingMove.newStatusId as TaskStatus);
+        } catch (error) {
+            console.error('Failed to move task with comment:', error);
+            // Still try the fallback
+            onStatusChange(pendingMove.taskId, pendingMove.newStatusId as TaskStatus);
+        }
+    }
+    setCommentModalOpen(false);
+    setPendingMove(null);
+  }, [pendingMove, onStatusChange]);
+
+  const handleCommentCancel = useCallback(() => {
+    setCommentModalOpen(false);
+    setPendingMove(null);
+  }, []);
   
   const activeTaskCanEdit = useMemo(() => {
     if (!activeTask) return false;
@@ -186,13 +303,14 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
 }, [activeTask, projects, currentUser]);
 
   return (
+    <>
     <DndContext 
         sensors={sensors}
         collisionDetection={closestCenter} 
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
     >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+        <div className={`grid ${getGridClass} gap-4 items-start`}>
             {columns.map(column => (
                 <KanbanColumn
                     key={column.id}
@@ -211,5 +329,18 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
             {activeTask ? <TaskItem task={activeTask} onDelete={() => {}} onStatusChange={() => {}} canEdit={activeTaskCanEdit} showStatusSelector={false} /> : null}
         </DragOverlay>
     </DndContext>
+    
+    {/* Comment Prompt Modal */}
+    {pendingMove && (
+      <CommentPromptModal
+        isOpen={commentModalOpen}
+        onClose={handleCommentCancel}
+        onConfirm={handleCommentConfirm}
+        statusName={pendingMove.statusName}
+        taskTitle={pendingMove.taskTitle}
+        isRequired={pendingMove.isRequired}
+      />
+    )}
+  </>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import TaskItem from './task-item';
 import { Card, CardContent } from '../ui/card';
 import { isPast, isWithinInterval, addHours } from 'date-fns';
@@ -9,10 +9,16 @@ import { Button } from '../ui/button';
 import { Plus } from 'lucide-react';
 import AddProjectDialog from './add-project-dialog';
 import { DailyOverviewSkeleton } from './daily-overview-skeleton';
+import { ComponentErrorBoundary } from '../error-boundary';
+import { sortByPriorityThen } from '@/lib/priority-utils';
 
-export default function DailyOverview() {
+const DailyOverview = React.memo(function DailyOverview() {
   const { projects, tasks: allTasks, currentUser, loading: appContextLoading, deleteTask } = useApp();
   const [isAddProjectDialogOpen, setAddProjectDialogOpen] = useState(false);
+
+  const handleAddProjectDialogOpen = useCallback(() => {
+    setAddProjectDialogOpen(true);
+  }, []);
 
   const sortedTasks = useMemo(() => {
     if (!currentUser) return [];
@@ -40,11 +46,17 @@ export default function DailyOverview() {
     const tasksWithDate = relevantTasks.filter(t => t.dueTime);
     const tasksWithoutDate = relevantTasks.filter(t => !t.dueTime);
 
-    tasksWithDate.sort((a, b) => new Date(a.dueTime!).getTime() - new Date(b.dueTime!).getTime());
+    // Sort tasks with due dates: priority first, then by due date
+    const sortedTasksWithDate = sortByPriorityThen(tasksWithDate, (a, b) => 
+      new Date(a.dueTime!).getTime() - new Date(b.dueTime!).getTime()
+    );
     
-    tasksWithoutDate.sort((a, b) => a.title.localeCompare(b.title));
+    // Sort tasks without due dates: priority first, then by title
+    const sortedTasksWithoutDate = sortByPriorityThen(tasksWithoutDate, (a, b) => 
+      a.title.localeCompare(b.title)
+    );
 
-    return [...tasksWithDate, ...tasksWithoutDate];
+    return [...sortedTasksWithDate, ...sortedTasksWithoutDate];
   }, [allTasks, currentUser]);
 
   if (appContextLoading) {
@@ -57,7 +69,7 @@ export default function DailyOverview() {
         <p className="text-lg font-semibold mb-2">Welcome to your new workspace!</p>
         <p className="text-muted-foreground mb-4">Get started by creating your first project.</p>
         <AddProjectDialog open={isAddProjectDialogOpen} onOpenChange={setAddProjectDialogOpen}>
-          <Button onClick={() => setAddProjectDialogOpen(true)}>
+          <Button onClick={handleAddProjectDialogOpen}>
             <Plus className="mr-2 h-4 w-4" />
             Create Project
           </Button>
@@ -77,7 +89,9 @@ export default function DailyOverview() {
                     <div className="space-y-2">
                         {sortedTasks.length > 0 ? (
                             sortedTasks.map(task => (
-                                <TaskItem key={task.id} task={task} onDelete={deleteTask} />
+                                <ComponentErrorBoundary key={task.id}>
+                                    <TaskItem task={task} onDelete={deleteTask} />
+                                </ComponentErrorBoundary>
                             ))
                         ) : (
                           <p className="text-sm text-muted-foreground">No tasks to prioritize.</p>
@@ -88,4 +102,6 @@ export default function DailyOverview() {
         </div>
     </div>
   );
-}
+});
+
+export default DailyOverview;

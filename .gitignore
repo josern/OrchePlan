@@ -1,40 +1,266 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# OrchePlan - Comprehensive .gitignore# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
 
-# testing
-/coverage
 
-# next.js
+# ===========================# dependencies
+
+# Node.js & NPM/node_modules
+
+# ===========================/.pnp
+
+node_modules/.pnp.js
+
+npm-debug.log*
+
+yarn-debug.log*# testing
+
+yarn-error.log*/coverage
+
+lerna-debug.log*
+
+.pnpm-debug.log*# next.js
+
 /.next/
-/out/
+
+# Dependency directories/out/
+
+jspm_packages/
 
 # production
-/build
 
-# misc
-.DS_Store
-*.pem
+# ===========================/build
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Environment & Configuration
 
-# local env files
-.env.local
+# ===========================# misc
+
+.env.DS_Store
+
+.env.local*.pem
+
 .env.development.local
-.env.test.local
-.env.production.local
 
-# vercel
-.vercel
+.env.test.local# debug
+
+.env.production.localnpm-debug.log*
+
+.env.coderyarn-debug.log*
+
+.env.testyarn-error.log*
+
+
+
+# ===========================# local env files
+
+# Next.js Frontend.env
+
+# ===========================.env.local
+
+/.next/.env.development.local
+
+/out/.env.test.local
+
+.next.tar.gz.env.production.local
+
+
+
+# TypeScript build info# vercel
+
+*.tsbuildinfo.vercel
+
+next-env.d.ts
 
 # local install
-/.firebase/
-.aiexclude
+
+# Static exports/.firebase/
+
+/frontend/.next/.aiexclude
+
+/frontend/out/.firebaserc
+
+/frontend/build/apphosting.yaml
+
+# ===========================
+# Backend Build Output
+# ===========================
+/backend/dist/
+/backend/build/
+*.js.map
+
+# ===========================
+# Database & Prisma
+# ===========================
+/backend/prisma/migrations/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ===========================
+# Logs & Runtime
+# ===========================
+logs/
+*.log
+*.log.*
+pids
+*.pid
+*.seed
+*.pid.lock
+.grunt
+lib-cov
+coverage/
+.nyc_output
+.coverage
+*.lcov
+
+# Backend specific logs
+/backend/logs/
+backend/logs/*.log
+
+# ===========================
+# Testing
+# ===========================
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+/frontend/test-results/
+/frontend/playwright-report/
+
+# Jest
+.jest-cache/
+
+# ===========================
+# Development Tools
+# ===========================
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ===========================
+# Temporary & Cache Files
+# ===========================
+*.tmp
+*.temp
+.cache/
+.parcel-cache/
+.eslintcache
+
+# ===========================
+# Security & Authentication
+# ===========================
+*.pem
+*.key
+*.crt
+*.p12
+auth-tokens/
+secrets/
+
+# Cookie files (testing)
+*cookies*.txt
+auth-cookies.txt
+test-cookies.txt
+
+# ===========================
+# Build & Distribution
+# ===========================
+build/
+dist/
+*.tgz
+*.tar.gz
+
+# ===========================
+# Docker (if re-added later)
+# ===========================
+Dockerfile.prod
+docker-compose.prod.yml
+.dockerignore
+
+# ===========================
+# Core Dumps & Debug
+# ===========================
+core
+core.*
+*.core
+*.dmp
+
+# ===========================
+# Deployment & Production
+# ===========================
+.vercel/
+.firebase/
 .firebaserc
 apphosting.yaml
+
+# PM2
+.pm2/
+ecosystem.config.production.js
+
+# ===========================
+# IDE & Editor Files
+# ===========================
+.vscode/
+.idea/
+*.sublime-*
+.history/
+
+# ===========================
+# Backup Files
+# ===========================
+*.backup
+*.bak
+*.old
+backup-*/
+
+# ===========================
+# Monitoring & Analytics
+# ===========================
+.aiexclude
+
+# ===========================
+# Local Development
+# ===========================
+*.local
+.modified
+
+# ===========================
+# Package Manager
+# ===========================
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ===========================
+# Production Deployment
+# ===========================
+deployment-*.tar.gz
+orcheplan-*.tar.gz
+
+# SSL certificates
+ssl/
+certificates/
+
+# ===========================
+# Miscellaneous
+# ===========================
+*.lock
+!package-lock.json
+!yarn.lock
+node_modules

@@ -33,14 +33,14 @@ export function LoginForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    const success = await login(values.email, values.password);
-    if (success) {
+    const result = await login(values.email, values.password);
+    if (result.success) {
       router.push('/dashboard');
     } else {
         toast({
             variant: 'destructive',
             title: 'Login Failed',
-            description: 'Invalid email or password.',
+            description: result.error || 'Invalid email or password.',
         });
     }
   }

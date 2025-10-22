@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useApp } from '@/context/app-context';
 import { useToast } from '@/hooks/use-toast';
-import { FirebaseError } from 'firebase/app';
 
 const passwordFormSchema = z.object({
   currentPassword: z.string().min(1, { message: 'Current password is required.' }),
@@ -45,8 +44,9 @@ export default function ChangePasswordForm() {
       form.reset();
     } catch (e) {
       let description = 'There was a problem changing your password.';
-      if (e instanceof FirebaseError) {
-        if (e.code === 'auth/wrong-password') {
+      const errAny = e as any;
+      if (errAny && typeof errAny.code === 'string') {
+        if (errAny.code === 'auth/wrong-password') {
           description = 'The current password you entered is incorrect.';
         }
       }

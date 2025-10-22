@@ -1,6 +1,8 @@
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // For same-server deployment, directUrl is optional but can help with connection pooling
+  // directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -12,11 +14,24 @@ model User {
   email     String   @unique
   password  String
   name      String?
+  role      String   @default("user") // user, admin, superuser
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  projects  Project[] @relation("owner_projects")
-  projectMembers ProjectMember[]
-  assignedTasks   Task[]
+  
+  // Account lockout fields
+  failedLoginAttempts Int       @default(0)
+  lastFailedAttempt   DateTime?
+  lockedUntil         DateTime?
+  lockoutReason       String?
+  isManuallyLocked    Boolean   @default(false)
+  
+  // Account status fields
+  isDisabled          Boolean   @default(false)
+  
+  projects            Project[] @relation("owner_projects")
+  projectMembers      ProjectMember[]
+  assignedTasks       Task[]
+  taskComments        TaskComment[]
 }
 
 model Project {
@@ -27,6 +42,9 @@ model Project {
   updatedAt   DateTime     @updatedAt
   ownerId     String
   owner       User         @relation("owner_projects", fields: [ownerId], references: [id])
+  parentProjectId String?
+  parentProject   Project?  @relation("ProjectChildren", fields: [parentProjectId], references: [id])
+  subProjects     Project[] @relation("ProjectChildren")
   members     ProjectMember[]
   statuses    TaskStatus[]
   tasks       Task[]
@@ -44,22 +62,47 @@ model ProjectMember {
 model TaskStatus {
   id        String  @id @default(uuid())
   label     String
+  showStrikeThrough Boolean @default(false)
+  color     String?
   order     Int     @default(0)
+  hidden    Boolean @default(false)
+  requiresComment Boolean @default(false)
+  allowsComment Boolean @default(true)
   project   Project @relation(fields: [projectId], references: [id])
   projectId String
   tasks     Task[]
+  comments  TaskComment[]
 }
 
 model Task {
   id          String   @id @default(uuid())
   title       String
   description String?
+  priority    String   @default("normal") // low, normal, high, urgent
   project     Project  @relation(fields: [projectId], references: [id])
   projectId   String
+  parentId    String?
+  parent      Task?    @relation("TaskChildren", fields: [parentId], references: [id])
+  children    Task[]   @relation("TaskChildren")
   statusId    String?
   status      TaskStatus? @relation(fields: [statusId], references: [id])
   assigneeId  String?
   assignee    User?    @relation(fields: [assigneeId], references: [id])
+  dueTime     DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  comments    TaskComment[]
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  content   String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId    String
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  statusId  String?  // The status this comment was made when moving to
+  status    TaskStatus? @relation(fields: [statusId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

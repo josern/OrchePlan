@@ -23,11 +23,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
+import { ComponentErrorBoundary } from '@/components/error-boundary';
 
 export default function ProjectSettingsPage() {
   const params = useParams();
   const router = useRouter();
   const pathname = usePathname();
+  if (!params || !params.projectId) return <div>Project not found</div>;
   const { projectId } = params;
   const { projects, currentUser, deleteProject, duplicateProject, updateProject } = useApp();
   const { toast } = useToast();
@@ -56,7 +58,7 @@ export default function ProjectSettingsPage() {
 
   const handleDelete = () => {
     if (project) {
-        deleteProject(project.id, pathname);
+        deleteProject(project.id, (pathname || '/') as string);
     }
   };
 
@@ -115,19 +117,25 @@ export default function ProjectSettingsPage() {
         </CardContent>
       </Card>
 
-      {isOwner && <ProjectManageStatuses />}
+      {isOwner && (
+        <ComponentErrorBoundary>
+          <ProjectManageStatuses />
+        </ComponentErrorBoundary>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Manage Access</CardTitle>
-          <CardDescription>
-            Add, remove, and manage roles for project members.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ManageAccess projectId={project.id} />
-        </CardContent>
-      </Card>
+      <ComponentErrorBoundary>
+        <Card>
+          <CardHeader>
+            <CardTitle>Manage Access</CardTitle>
+            <CardDescription>
+              Add, remove, and manage roles for project members.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ManageAccess projectId={project.id} />
+          </CardContent>
+        </Card>
+      </ComponentErrorBoundary>
 
       <Card>
         <CardHeader>

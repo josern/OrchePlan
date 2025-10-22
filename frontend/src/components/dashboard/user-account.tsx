@@ -1,7 +1,7 @@
 
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/context/app-context';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Skeleton } from '../ui/skeleton';
 import { Settings, Bell, LogOut } from 'lucide-react';
 
-export default function UserAccount() {
+const UserAccount = memo(function UserAccount() {
     const { currentUser, loading, logout } = useApp();
 
     if (loading || !currentUser) {
@@ -55,4 +55,6 @@ export default function UserAccount() {
             </DropdownMenuContent>
         </DropdownMenu>
     );
-}
+});
+
+export default UserAccount;

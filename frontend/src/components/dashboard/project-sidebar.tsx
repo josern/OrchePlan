@@ -2,7 +2,7 @@
 
 import { ProjectList } from './project-list';
 import { Button } from '@/components/ui/button';
-import { Plus, Calendar } from 'lucide-react';
+import { Plus, Calendar, Shield } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import UserAccount from './user-account';
 import { Separator } from '@/components/ui/separator';
@@ -11,12 +11,15 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { SidebarHeader, SidebarTrigger } from '@/components/ui/sidebar';
 import { Logo } from '@/components/logo';
+import { useIsAdmin } from '@/components/role-guard';
 
 const AddProjectDialog = dynamic(() => import('./add-project-dialog'), { ssr: false });
 
 export default function ProjectSidebar() {
     const pathname = usePathname();
     const isTodayActive = pathname === '/';
+    const isAdminActive = pathname === '/admin';
+    const isAdmin = useIsAdmin();
 
     return (
         <div className="h-full flex flex-col">
@@ -30,7 +33,7 @@ export default function ProjectSidebar() {
                 </div>
             </SidebarHeader>
             <Separator />
-            <div className="p-4">
+            <div className="p-4 space-y-1">
                 <Link href="/" className={cn(
                     "flex items-center gap-2 rounded-md p-2 transition-colors text-sm font-medium",
                     isTodayActive 
@@ -40,6 +43,18 @@ export default function ProjectSidebar() {
                     <Calendar size={16} />
                     <span>Today</span>
                 </Link>
+                
+                {isAdmin && (
+                    <Link href="/admin" className={cn(
+                        "flex items-center gap-2 rounded-md p-2 transition-colors text-sm font-medium",
+                        isAdminActive 
+                            ? "bg-primary/10 text-primary" 
+                            : "hover:bg-muted/50"
+                    )}>
+                        <Shield size={16} />
+                        <span>Admin</span>
+                    </Link>
+                )}
             </div>
             <Separator />
             <div className="p-4">

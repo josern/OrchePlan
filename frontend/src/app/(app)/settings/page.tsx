@@ -2,6 +2,7 @@
 import ProfileForm from "@/components/settings/profile-form";
 import ChangePasswordForm from "@/components/settings/change-password-form";
 import AppearanceForm from "@/components/settings/appearance-form";
+import { ComponentErrorBoundary } from "@/components/error-boundary";
 
 export default function SettingsPage() {
     return (
@@ -11,9 +12,15 @@ export default function SettingsPage() {
                 <p className="text-muted-foreground">Manage your account and preferences.</p>
             </div>
             
-            <ProfileForm />
-            <ChangePasswordForm />
-            <AppearanceForm />
+            <ComponentErrorBoundary>
+                <ProfileForm />
+            </ComponentErrorBoundary>
+            <ComponentErrorBoundary>
+                <ChangePasswordForm />
+            </ComponentErrorBoundary>
+            <ComponentErrorBoundary>
+                <AppearanceForm />
+            </ComponentErrorBoundary>
 
         </div>
     )

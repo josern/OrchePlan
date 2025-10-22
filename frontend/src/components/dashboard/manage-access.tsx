@@ -16,7 +16,7 @@ interface ManageAccessProps {
 }
 
 export default function ManageAccess({ projectId }: ManageAccessProps) {
-  const { projects, users, currentUser, updateProject, findUserByEmail } = useApp();
+  const { projects, users, currentUser, addProjectMember, updateProjectMemberRole, removeProjectMember, findUserByEmailOrName } = useApp();
   const { toast } = useToast();
 
   const project = useMemo(() => findProjectById(projects, projectId), [projects, projectId]);
@@ -27,7 +27,7 @@ export default function ManageAccess({ projectId }: ManageAccessProps) {
   const projectMembers = useMemo(() => {
       if (!project || !project.members) return [];
       return Object.keys(project.members).map(userId => {
-          const user = users.find(u => u.id === userId);
+          const user = users.get(userId);
           return user ? { ...user, role: project.members[userId] } : null;
       }).filter(Boolean) as (User & { role: ProjectRole })[];
   }, [project, users]);
@@ -39,14 +39,16 @@ export default function ManageAccess({ projectId }: ManageAccessProps) {
 
   const filteredUsers = useMemo(() => {
       const memberIds = new Set(projectMembers.map(m => m.id));
-      return users.filter(u => !memberIds.has(u.id) && u.email.toLowerCase().includes(searchQuery.toLowerCase()));
+      const query = searchQuery.toLowerCase();
+      return Array.from(users.values()).filter(u => 
+          !memberIds.has(u.id) && 
+          (u.email.toLowerCase().includes(query) || u.name.toLowerCase().includes(query))
+      );
   }, [users, projectMembers, searchQuery]);
 
   const handleRoleChange = async (userId: string, newRole: ProjectRole) => {
-      if (!project || !project.members) return;
-      const updatedMembers = { ...project.members, [userId]: newRole };
       try {
-          await updateProject(project.id, { members: updatedMembers });
+          await updateProjectMemberRole(projectId, userId, newRole);
           toast({ title: 'Success', description: "Member's role has been updated." });
       } catch (error) {
           toast({ variant: 'destructive', title: 'Error', description: 'Failed to update member role.' });
@@ -54,10 +56,8 @@ export default function ManageAccess({ projectId }: ManageAccessProps) {
   };
 
   const handleRemoveMember = async (userId: string) => {
-      if (!project || !project.members) return;
-      const { [userId]: _, ...remainingMembers } = project.members;
       try {
-          await updateProject(project.id, { members: remainingMembers });
+          await removeProjectMember(projectId, userId);
           toast({ title: 'Success', description: 'Member has been removed from the project.' });
       } catch (error) {
           toast({ variant: 'destructive', title: 'Error', description: 'Failed to remove member.' });
@@ -67,7 +67,7 @@ export default function ManageAccess({ projectId }: ManageAccessProps) {
   const handleAddMember = async () => {
     if (!searchQuery || !project) return;
 
-    const userToAdd = await findUserByEmail(searchQuery);
+    const userToAdd = await findUserByEmailOrName(searchQuery);
     if (!userToAdd) {
         toast({ variant: 'destructive', title: 'Error', description: 'User not found.' });
         return;
@@ -78,10 +78,9 @@ export default function ManageAccess({ projectId }: ManageAccessProps) {
         return;
     }
 
-    const updatedMembers = { ...(project.members || {}), [userToAdd.id]: 'viewer' as ProjectRole };
     try {
-        await updateProject(project.id, { members: updatedMembers });
-        toast({ title: 'Success', description: `${userToAdd.email} has been added to the project.` });
+        await addProjectMember(projectId, userToAdd.id, 'viewer');
+        toast({ title: 'Success', description: `${userToAdd.name} (${userToAdd.email}) has been added to the project.` });
         setSearchQuery('');
         setComboboxOpen(false);
     } catch (error) {
@@ -104,14 +103,14 @@ export default function ManageAccess({ projectId }: ManageAccessProps) {
                                 aria-expanded={isComboboxOpen}
                                 className="w-full justify-between text-muted-foreground"
                             >
-                                {searchQuery || "Enter user email..."}
+                                {searchQuery || "Search user by name or email..."}
                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
                             <Command>
                                 <CommandInput 
-                                    placeholder="Search for user by email..." 
+                                    placeholder="Search by name or email..." 
                                     value={searchQuery}
                                     onValueChange={setSearchQuery}
                                 />
@@ -125,7 +124,10 @@ export default function ManageAccess({ projectId }: ManageAccessProps) {
                                                 setComboboxOpen(false);
                                             }}
                                         >
-                                            {user.email}
+                                            <div className="flex flex-col">
+                                                <span className="font-medium">{user.name}</span>
+                                                <span className="text-sm text-muted-foreground">{user.email}</span>
+                                            </div>
                                         </CommandItem>
                                     ))}
                                 </CommandGroup>

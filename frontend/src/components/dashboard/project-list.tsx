@@ -1,8 +1,10 @@
+import React from 'react';
 import { useApp } from '@/context/app-context';
 import { ProjectListItem } from './project-list-item';
 import { Skeleton } from '../ui/skeleton';
+import { ComponentErrorBoundary } from '../error-boundary';
 
-export function ProjectList() {
+export const ProjectList = React.memo(function ProjectList() {
   const { projects, loading } = useApp();
 
   if (loading) {
@@ -12,11 +14,13 @@ export function ProjectList() {
   return (
     <div className="space-y-1">
       {projects.map((project) => (
-        <ProjectListItem key={project.id} project={project} />
+        <ComponentErrorBoundary key={project.id}>
+          <ProjectListItem project={project} />
+        </ComponentErrorBoundary>
       ))}
     </div>
   );
-}
+});
 
 function ProjectListSkeleton() {
     return (

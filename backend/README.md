@@ -54,6 +54,37 @@ my-firestore-local-app
 - The application will run on `http://localhost:3000` (or the port specified in your configuration).
 - You can interact with the Firestore emulator through the defined routes.
 
+## Logging System
+
+This application includes a comprehensive logging system with the following features:
+
+- **Structured Logging**: JSON-formatted logs with contextual metadata
+- **Multiple Log Levels**: Debug, Info, Warn, Error with environment-aware filtering
+- **File Logging**: Automatic log file creation with rotation
+- **Request Tracing**: Correlation IDs for tracking requests across services
+- **Performance Monitoring**: Built-in execution time measurement
+
+### Log Configuration
+
+Configure logging through environment variables in `.env`:
+
+```bash
+LOG_LEVEL=info          # debug, info, warn, error
+LOG_CONSOLE=true        # Enable/disable console output
+LOG_FILE=true           # Enable/disable file logging
+LOG_DIR=./logs          # Log directory path
+```
+
+### Log Files
+
+Logs are automatically written to separate files by level:
+- `logs/debug-YYYY-MM-DD.log`
+- `logs/info-YYYY-MM-DD.log`
+- `logs/warn-YYYY-MM-DD.log`
+- `logs/error-YYYY-MM-DD.log`
+
+See `docs/logging-system.md` for detailed documentation.
+
 ## Contributing
 
 Feel free to submit issues or pull requests for improvements or bug fixes. 

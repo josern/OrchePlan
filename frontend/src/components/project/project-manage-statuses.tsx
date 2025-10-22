@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TaskStatusOption } from '@/lib/types';
 import { TwitterPicker } from 'react-color';
-import { DndContext, DragEndEvent } from '@dnd-kit/core';
+import { Switch } from '@/components/ui/switch';
+import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -46,24 +47,57 @@ export default function ProjectManageStatuses({ projectId, statuses: initialStat
     const [statuses, setStatuses] = useState<TaskStatusOption[]>(initialStatuses);
     const [newStatusName, setNewStatusName] = useState('');
     const [newStatusColor, setNewStatusColor] = useState('#3B82F6');
+    const [newStatusShowStrikeThrough, setNewStatusShowStrikeThrough] = useState(false);
+    const [newStatusRequiresComment, setNewStatusRequiresComment] = useState(false);
+    const [newStatusAllowsComment, setNewStatusAllowsComment] = useState(true);
     const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
     const [editingStatusName, setEditingStatusName] = useState('');
     const [editingStatusColor, setEditingStatusColor] = useState('');
+    const [editingStatusRequiresComment, setEditingStatusRequiresComment] = useState(false);
+    const [editingStatusAllowsComment, setEditingStatusAllowsComment] = useState(true);
 
     useEffect(() => {
         setStatuses(initialStatuses);
     }, [initialStatuses]);
 
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(TouchSensor, {
+            activationConstraint: {
+                delay: 100,
+                tolerance: 5,
+            },
+        })
+    );
+
     const handleAddStatus = async () => {
         if (newStatusName.trim() === '') return;
-        await addProjectTaskStatus(projectId, { name: newStatusName, color: newStatusColor, order: statuses.length });
+        await addProjectTaskStatus(projectId, { 
+            name: newStatusName, 
+            color: newStatusColor, 
+            order: statuses.length, 
+            showStrikeThrough: newStatusShowStrikeThrough,
+            requiresComment: newStatusRequiresComment,
+            allowsComment: newStatusAllowsComment
+        } as any);
         setNewStatusName('');
         setNewStatusColor('#3B82F6');
+        setNewStatusRequiresComment(false);
+        setNewStatusAllowsComment(true);
     };
 
     const handleUpdateStatus = async (statusId: string) => {
         if (editingStatusName.trim() === '') return;
-        await updateProjectTaskStatus(projectId, statusId, { name: editingStatusName, color: editingStatusColor });
+        await updateProjectTaskStatus(projectId, statusId, { 
+            name: editingStatusName, 
+            color: editingStatusColor,
+            requiresComment: editingStatusRequiresComment,
+            allowsComment: editingStatusAllowsComment
+        });
         setEditingStatusId(null);
     };
 
@@ -97,37 +131,72 @@ export default function ProjectManageStatuses({ projectId, statuses: initialStat
                         <Button onClick={() => addDefaultTaskStatuses(projectId)} className="mt-4">Add Default Statuses</Button>
                     </div>
                 )}
-                <DndContext onDragEnd={handleDragEnd}>
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
                     <SortableContext items={statuses.map(s => s.id)} strategy={verticalListSortingStrategy}>
                         <div className="space-y-2">
                             {statuses.map(status => (
                                 <SortableItem key={status.id} id={status.id}>
                                     <div className="flex items-center space-x-2 p-2 rounded-md bg-muted">
                                         {editingStatusId === status.id ? (
-                                            <div className="flex-grow flex items-center space-x-2">
-                                                <Input 
-                                                    value={editingStatusName}
-                                                    onChange={(e) => setEditingStatusName(e.target.value)} 
-                                                    className="h-8"
-                                                />
-                                                <TwitterPicker 
-                                                    color={editingStatusColor} 
-                                                    onChangeComplete={(color) => setEditingStatusColor(color.hex)} 
-                                                />
-                                                <Button onClick={() => handleUpdateStatus(status.id)} size="sm">Save</Button>
-                                                <Button onClick={() => setEditingStatusId(null)} size="sm" variant="ghost">Cancel</Button>
+                                            <div className="flex-grow">
+                                                <div className="grid grid-cols-1 gap-3">
+                                                    <div className="flex items-center space-x-2">
+                                                        <Input 
+                                                            value={editingStatusName}
+                                                            onChange={(e) => setEditingStatusName(e.target.value)} 
+                                                            className="h-8 flex-grow"
+                                                            placeholder="Status name"
+                                                        />
+                                                        <TwitterPicker 
+                                                            color={editingStatusColor} 
+                                                            onChangeComplete={(color) => setEditingStatusColor(color.hex)} 
+                                                        />
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                                        <div className="flex items-center space-x-2">
+                                                            <Switch 
+                                                                checked={editingStatusRequiresComment}
+                                                                onCheckedChange={setEditingStatusRequiresComment}
+                                                            />
+                                                            <span>Require comment</span>
+                                                        </div>
+                                                        <div className="flex items-center space-x-2">
+                                                            <Switch 
+                                                                checked={editingStatusAllowsComment}
+                                                                onCheckedChange={setEditingStatusAllowsComment}
+                                                            />
+                                                            <span>Allow comments</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center space-x-2">
+                                                        <Button onClick={() => handleUpdateStatus(status.id)} size="sm">Save</Button>
+                                                        <Button onClick={() => setEditingStatusId(null)} size="sm" variant="ghost">Cancel</Button>
+                                                    </div>
+                                                </div>
                                             </div>
                                         ) : (
                                             <div className="flex-grow flex items-center justify-between">
                                                 <div className="flex items-center space-x-2">
                                                     <div className="w-4 h-4 rounded-full" style={{ backgroundColor: status.color }}></div>
                                                     <span>{status.name}</span>
+                                                    {status.requiresComment && (
+                                                        <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full">
+                                                            💬 Required
+                                                        </span>
+                                                    )}
+                                                    {status.allowsComment && !status.requiresComment && (
+                                                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                                            💬 Optional
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center space-x-2">
                                                     <Button onClick={() => {
                                                         setEditingStatusId(status.id);
                                                         setEditingStatusName(status.name);
                                                         setEditingStatusColor(status.color);
+                                                        setEditingStatusRequiresComment(status.requiresComment || false);
+                                                        setEditingStatusAllowsComment(status.allowsComment !== false);
                                                     }} size="sm" variant="outline">Edit</Button>
                                                     <Button onClick={() => handleDeleteStatus(status.id)} size="sm" variant="destructive">Delete</Button>
                                                 </div>
@@ -139,17 +208,33 @@ export default function ProjectManageStatuses({ projectId, statuses: initialStat
                         </div>
                     </SortableContext>
                 </DndContext>
-                <div className="flex items-center space-x-2 pt-4">
-                    <Input 
-                        placeholder="New status name" 
-                        value={newStatusName}
-                        onChange={(e) => setNewStatusName(e.target.value)} 
-                        className="h-8"
-                    />
-                    <TwitterPicker 
-                        color={newStatusColor} 
-                        onChangeComplete={(color) => setNewStatusColor(color.hex)} 
-                    />
+                <div className="space-y-3 pt-4">
+                    <div className="flex items-center space-x-2">
+                        <Input 
+                            placeholder="New status name" 
+                            value={newStatusName}
+                            onChange={(e) => setNewStatusName(e.target.value)} 
+                            className="h-8 flex-grow"
+                        />
+                        <TwitterPicker 
+                            color={newStatusColor} 
+                            onChangeComplete={(color) => setNewStatusColor(color.hex)} 
+                        />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div className="flex items-center space-x-2">
+                            <Switch checked={newStatusShowStrikeThrough} onCheckedChange={(v) => setNewStatusShowStrikeThrough(!!v)} />
+                            <span className="text-muted-foreground">Strike-through</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <Switch checked={newStatusRequiresComment} onCheckedChange={setNewStatusRequiresComment} />
+                            <span className="text-muted-foreground">Require comment</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <Switch checked={newStatusAllowsComment} onCheckedChange={setNewStatusAllowsComment} />
+                            <span className="text-muted-foreground">Allow comments</span>
+                        </div>
+                    </div>
                     <Button onClick={handleAddStatus} size="sm">Add Status</Button>
                 </div>
             </CardContent>

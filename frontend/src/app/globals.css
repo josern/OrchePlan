@@ -88,3 +88,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* compact mode adjustments */
+@layer utilities {
+  .compact .card-compact-p { padding: 0.25rem !important; }
+  .compact .card-compact-p-lg { padding: 0.5rem !important; }
+  .compact .text-compact-sm { font-size: 0.75rem !important; }
+  .compact .avatar-compact { height: 1rem !important; width: 1rem !important; }
+  /* reduce sidebar item padding */
+  .compact .sidebar-item { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+}

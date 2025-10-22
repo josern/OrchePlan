@@ -1,10 +1,11 @@
 'use client';
 
+import React from 'react';
 import { useApp } from '@/context/app-context';
 import { Folder, ChevronDown, ChevronRight, Settings, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { cn, truncate } from '@/lib/utils';
 import type { Project } from '@/lib/types';
 import dynamic from 'next/dynamic';
@@ -16,7 +17,7 @@ interface ProjectListItemProps {
   project: Project;
 }
 
-export function ProjectListItem({ project }: ProjectListItemProps) {
+export const ProjectListItem = React.memo<ProjectListItemProps>(function ProjectListItem({ project }) {
   const { currentUser, isSidebarOpenByDefault } = useApp();
   const { isMobile, setOpen, setOpenMobile } = useSidebar();
   const pathname = usePathname();
@@ -32,13 +33,13 @@ export function ProjectListItem({ project }: ProjectListItemProps) {
 
   const hasSubProjects = project.subProjects && project.subProjects.length > 0;
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     if (isMobile) {
         setOpenMobile(false);
     } else if (!isSidebarOpenByDefault) {
         setOpen(false);
     }
-  };
+  }, [isMobile, setOpenMobile, isSidebarOpenByDefault, setOpen]);
 
   return (
     <div>
@@ -76,4 +77,4 @@ export function ProjectListItem({ project }: ProjectListItemProps) {
       )}
     </div>
   );
-}
+});

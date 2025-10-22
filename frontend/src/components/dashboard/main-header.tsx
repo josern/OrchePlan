@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Plus, Eye, EyeOff } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useApp } from '@/context/app-context';
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import type { Project } from '@/lib/types';
 import dynamic from 'next/dynamic';
 import { findProjectById } from '@/lib/projects';
@@ -13,13 +13,18 @@ import MainPageSidebarTrigger from './main-page-sidebar-trigger';
 
 const AddTaskDialog = dynamic(() => import('./add-task-dialog'), { ssr: false });
 
-export default function MainHeader() {
+const MainHeader = React.memo(function MainHeader() {
   const pathname = usePathname();
   const { projects, currentUser, isKanbanHeaderVisible, toggleKanbanHeader } = useApp();
   const [title, setTitle] = useState('Today\'s Focus');
   const [currentProjectId, setCurrentProjectId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
+    if (!pathname) {
+      setTitle('Today\'s Focus');
+      setCurrentProjectId(undefined);
+      return;
+    }
     if (pathname === '/dashboard') {
         setTitle('Today\'s Focus');
         setCurrentProjectId(undefined);
@@ -73,4 +78,6 @@ export default function MainHeader() {
       </div>
     </header>
   );
-}
+});
+
+export default MainHeader;

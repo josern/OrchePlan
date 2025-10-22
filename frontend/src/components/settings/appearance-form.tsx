@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -6,9 +6,10 @@ import { Switch } from "@/components/ui/switch";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useApp } from "@/context/app-context";
 import { useEffect, useState } from "react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function AppearanceForm() {
-  const { isSidebarOpenByDefault, toggleSidebarDefault } = useApp();
+  const { isSidebarOpenByDefault, toggleSidebarDefault, cardDensity, setCardDensity } = useApp();
   
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -57,6 +58,18 @@ export default function AppearanceForm() {
                 </p>
             </div>
             <ThemeToggle />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+                <Label className="text-base">Card density</Label>
+                <p className="text-sm text-muted-foreground">Choose comfortable or compact task card density.</p>
+            </div>
+            <Tabs value={cardDensity} onValueChange={(v) => setCardDensity(v as 'comfortable' | 'compact')}>
+                <TabsList>
+                    <TabsTrigger value="comfortable">Comfortable</TabsTrigger>
+                    <TabsTrigger value="compact">Compact</TabsTrigger>
+                </TabsList>
+            </Tabs>
         </div>
       </CardContent>
     </Card>
