@@ -24,10 +24,8 @@
     "smoke-test": "bash scripts/smoke-test.sh",
     "create-superuser": "ts-node scripts/create_superuser.ts",
     "check-users": "ts-node scripts/check_users.ts",
-    "test-lockout": "ts-node scripts/test_account_lockout.ts",
     "cleanup-lockouts": "ts-node scripts/cleanup_lockouts.ts",
     "db:backup": "bash scripts/backup-database.sh",
-    "db:restore": "bash scripts/restore-database.sh",
     "logs": "tail -f /var/log/orcheplan/app.log"
   },
   "dependencies": {

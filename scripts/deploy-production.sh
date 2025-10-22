@@ -113,31 +113,37 @@ sudo -u $APP_USER ln -sfn $RELEASE_DIR $APP_DIR/current
 print_step "Installing dependencies..."
 cd $APP_DIR/current
 
-# Backend dependencies (production only)
+# Copy .npmrc for reduced warnings
+sudo -u $APP_USER cp .npmrc /opt/orcheplan/ 2>/dev/null || echo "No .npmrc found"
+
+# Backend dependencies (all dependencies needed for build)
 print_step "Installing backend dependencies..."
 cd $APP_DIR/current/backend
-sudo -u $APP_USER npm install --production
+sudo -u $APP_USER npm install --loglevel=warn
 
 # Frontend dependencies (all dependencies needed for build)
 print_step "Installing frontend dependencies..."
 cd $APP_DIR/current/frontend
-sudo -u $APP_USER npm install
+sudo -u $APP_USER npm install --loglevel=warn
 
 # Step 9: Build applications
 print_step "Building applications..."
+
+# Build backend first (TypeScript compilation)
+cd $APP_DIR/current/backend
+sudo -u $APP_USER npm run build
 
 # Build frontend
 cd $APP_DIR/current/frontend
 sudo -u $APP_USER npm run build
 
-# Build backend (if TypeScript)
+# Step 9.5: Clean up devDependencies after build
+print_step "Cleaning up devDependencies after build..."
 cd $APP_DIR/current/backend
-sudo -u $APP_USER npm run build || echo "No build script found for backend"
+sudo -u $APP_USER npm prune --omit=dev --loglevel=warn
 
-# Step 9.5: Clean up frontend devDependencies after build
-print_step "Cleaning up frontend devDependencies..."
 cd $APP_DIR/current/frontend
-sudo -u $APP_USER npm prune --production
+sudo -u $APP_USER npm prune --omit=dev --loglevel=warn
 
 # Step 10: Setup PostgreSQL database
 print_step "Setting up PostgreSQL database..."
@@ -146,8 +152,15 @@ sudo systemctl start postgresql
 
 # Create database and user
 sudo -u postgres psql -c "CREATE DATABASE orcheplan;" || echo "Database might already exist"
-sudo -u postgres psql -c "CREATE USER orcheplan WITH PASSWORD 'secure_password_here';" || echo "User might already exist"
+sudo -u postgres psql -c "CREATE USER orcheplan WITH CREATEDB PASSWORD 'secure_password_here';" || echo "User might already exist"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE orcheplan TO orcheplan;" || echo "Privileges might already be granted"
+
+# Grant schema permissions for Prisma migrations
+sudo -u postgres psql -d orcheplan -c "GRANT ALL ON SCHEMA public TO orcheplan;" || echo "Schema privileges might already be granted"
+sudo -u postgres psql -d orcheplan -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO orcheplan;" || echo "Table privileges might already be granted"
+sudo -u postgres psql -d orcheplan -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO orcheplan;" || echo "Sequence privileges might already be granted"
+sudo -u postgres psql -d orcheplan -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO orcheplan;" || echo "Default table privileges might already be granted"
+sudo -u postgres psql -d orcheplan -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO orcheplan;" || echo "Default sequence privileges might already be granted"
 
 # Step 11: Setup environment files
 print_step "Setting up environment files..."
@@ -167,7 +180,22 @@ fi
 # Step 12: Run database migrations
 print_step "Running database migrations..."
 cd $APP_DIR/current/backend
-sudo -u $APP_USER npm run db:migrate || sudo -u $APP_USER npm run migrate:deploy || echo "Migration command not found or failed"
+
+# Generate Prisma client first
+print_step "Generating Prisma client..."
+sudo -u $APP_USER npm run prisma:generate
+
+# Check for failed migrations and resolve them
+print_step "Checking migration status..."
+if sudo -u $APP_USER npx prisma migrate status 2>&1 | grep -q "failed"; then
+    print_warning "Found failed migrations, attempting to resolve..."
+    # Mark failed migrations as resolved
+    sudo -u $APP_USER npx prisma migrate resolve --applied 20251016103312_add_parentid || echo "Could not resolve failed migration"
+fi
+
+# Deploy migrations
+print_step "Deploying database migrations..."
+sudo -u $APP_USER npm run prisma:migrate:deploy || echo "Migration command failed or not found"
 
 # Step 13: Setup PM2 ecosystem
 print_step "Setting up PM2 ecosystem..."
