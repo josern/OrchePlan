@@ -119,7 +119,7 @@ npx prisma generate
 
 # Build frontend
 cd ../frontend
-npm run build
+npm run build:production
 
 # Return to root
 cd ..
@@ -255,7 +255,7 @@ npx prisma migrate deploy
 # Rebuild frontend
 cd ../frontend
 npm install
-npm run build
+npm run build:production
 
 # Restart services
 cd ..

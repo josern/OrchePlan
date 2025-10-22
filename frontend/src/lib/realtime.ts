@@ -34,9 +34,10 @@ class RealtimeClient {
     }
   }
 
-  // Alternative SSE connection using fetch for better compatibility
+    // Alternative SSE connection using fetch for better compatibility
   private async connectWithFetch(url: string) {
     try {
+      console.log('[SSE] Attempting fetch-based connection to:', url);
       
       const response = await fetch(url, {
         credentials: 'include',
@@ -54,6 +55,7 @@ class RealtimeClient {
         throw new Error('No response body for SSE stream');
       }
 
+      console.log('[SSE] Successfully connected, processing stream...');
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.connectionFailed = false;
@@ -69,30 +71,74 @@ class RealtimeClient {
             const { done, value } = await reader.read();
             
             if (done) {
+              console.log('[SSE] Stream ended normally');
               this.handleDisconnect();
               break;
             }
 
-            buffer += decoder.decode(value, { stream: true });
+            // Safely decode the stream chunk
+            let chunk: string;
+            try {
+              chunk = decoder.decode(value, { stream: true });
+            } catch (decodeError) {
+              console.error('[SSE] Failed to decode stream chunk:', decodeError);
+              continue;
+            }
+
+            buffer += chunk;
             
-            // Process complete messages
+            // Process complete messages (SSE format: "data: {}\n\n")
             const lines = buffer.split('\n');
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
+              const trimmedLine = line.trim();
+              
+              // Skip empty lines and comments
+              if (!trimmedLine || trimmedLine.startsWith(':')) {
+                continue;
+              }
+              
+              // Handle SSE data lines
+              if (trimmedLine.startsWith('data: ')) {
                 try {
-                  const data = JSON.parse(line.slice(6));
-                  this.handleMessage(data);
-                } catch (error) {
-                  console.error('[SSE] Error parsing message:', error);
+                  const jsonData = trimmedLine.slice(6).trim();
+                  if (jsonData) {
+                    const data = JSON.parse(jsonData);
+                    this.handleMessage(data);
+                  }
+                } catch (parseError) {
+                  console.warn('[SSE] Failed to parse message:', trimmedLine, parseError);
+                }
+              }
+              // Handle other SSE fields (event, id, retry)
+              else if (trimmedLine.includes(': ')) {
+                const [field, ...valueParts] = trimmedLine.split(': ');
+                const value = valueParts.join(': ');
+                
+                switch (field) {
+                  case 'event':
+                    // Handle event type if needed
+                    break;
+                  case 'id':
+                    // Handle message ID if needed
+                    break;
+                  case 'retry':
+                    // Handle retry interval if needed
+                    break;
                 }
               }
             }
           }
-        } catch (error) {
-          console.error('[SSE] Stream processing error:', error);
+        } catch (streamError) {
+          console.error('[SSE] Stream processing error:', streamError);
           this.handleDisconnect();
+        } finally {
+          try {
+            reader.releaseLock();
+          } catch (lockError) {
+            console.warn('[SSE] Failed to release reader lock:', lockError);
+          }
         }
       };
 
@@ -107,11 +153,14 @@ class RealtimeClient {
   // Fallback to standard EventSource
   private connectWithEventSource(url: string) {
     try {
+      console.log('[SSE] Attempting EventSource connection to:', url);
+      
       this.eventSource = new EventSource(url, {
         withCredentials: true
       });
 
       this.eventSource.onopen = () => {
+        console.log('[SSE] EventSource connection established');
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
@@ -123,34 +172,42 @@ class RealtimeClient {
           const data = JSON.parse(event.data);
           this.handleMessage(data);
         } catch (error) {
-          console.error('[SSE] Error parsing EventSource message:', error);
+          console.error('[SSE] Error parsing EventSource message:', error, 'Raw data:', event.data);
         }
       };
 
       this.eventSource.onerror = (error) => {
         console.warn('[SSE] EventSource error:', error);
+        console.log('[SSE] EventSource readyState:', this.eventSource?.readyState);
         this.handleDisconnect();
       };
 
     } catch (error) {
       console.error('[SSE] EventSource creation failed:', error);
       this.connectionFailed = true;
-      this.emit('connection_failed', { reason: 'eventsource_error' });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.emit('connection_failed', { reason: 'eventsource_error', error: errorMessage });
     }
   }
 
   // Handle disconnection and reconnection logic
   private handleDisconnect() {
-    console.warn('[SSE] Connection lost');
+    const timestamp = new Date().toISOString();
+    console.warn(`[SSE] Connection lost at ${timestamp}, attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts}`);
     this.isConnected = false;
     
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      const delay = Math.min(this.reconnectDelay, 30000); // Cap at 30 seconds
+      console.log(`[SSE] Reconnecting in ${delay}ms...`);
+      
       setTimeout(() => {
         this.reconnectAttempts++;
         this.reconnectDelay *= 2;
+        console.log('[SSE] Attempting reconnection...');
         this.connect();
-      }, this.reconnectDelay);
+      }, delay);
     } else {
+      console.error('[SSE] Max reconnection attempts reached, giving up');
       this.connectionFailed = true;
       this.disconnect();
       this.emit('connection_failed', { reason: 'max_attempts_reached' });
@@ -226,6 +283,38 @@ class RealtimeClient {
   // Check if connection has permanently failed
   hasConnectionFailed() {
     return this.connectionFailed;
+  }
+
+  // Get detailed connection information for debugging
+  getConnectionInfo() {
+    return {
+      isConnected: this.isConnected,
+      connectionFailed: this.connectionFailed,
+      reconnectAttempts: this.reconnectAttempts,
+      maxReconnectAttempts: this.maxReconnectAttempts,
+      reconnectDelay: this.reconnectDelay,
+      eventSourceState: this.eventSource?.readyState,
+      eventSourceStateText: this.eventSource ? this.getEventSourceStateText(this.eventSource.readyState) : 'N/A',
+      lastConnectAttempt: new Date().toISOString()
+    };
+  }
+
+  private getEventSourceStateText(state: number): string {
+    switch (state) {
+      case EventSource.CONNECTING: return 'CONNECTING';
+      case EventSource.OPEN: return 'OPEN';
+      case EventSource.CLOSED: return 'CLOSED';
+      default: return 'UNKNOWN';
+    }
+  }
+
+  // Manual reconnection method for debugging
+  forceReconnect() {
+    console.log('[SSE] Manual reconnection requested');
+    this.disconnect();
+    this.reconnectAttempts = 0;
+    this.connectionFailed = false;
+    this.connect();
   }
 }
 

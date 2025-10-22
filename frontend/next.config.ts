@@ -28,6 +28,19 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: process.env.NODE_ENV === 'development',
   },
   
+  // Source map configuration
+  productionBrowserSourceMaps: false, // Disable source maps in production
+  
+  // Webpack configuration
+  webpack: (config, { dev, isServer }) => {
+    // Disable source maps in production for client-side bundles
+    if (!dev && !isServer) {
+      config.devtool = false;
+    }
+    
+    return config;
+  },
+  
   // Image optimization
   images: {
     remotePatterns: [
