@@ -107,6 +107,7 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState<LockoutStats | null>(null);
+  const [adminStats, setAdminStats] = useState<any | null>(null);
   const [lockedAccounts, setLockedAccounts] = useState<LockedAccount[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -189,6 +190,13 @@ function AdminDashboard() {
     try {
       const data = await api.get('/admin/lockouts');
       setStats(data.stats);
+      // fetch overall admin stats
+      try {
+        const s = await api.get('/admin/stats');
+        setAdminStats(s);
+      } catch (e) {
+        console.error('Failed to fetch admin stats:', e);
+      }
     } catch (error) {
       console.error('Failed to fetch stats:', error);
       toast({
@@ -566,6 +574,98 @@ function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{stats.expiredLocks}</div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* System-wide totals and per-user counts */}
+          {adminStats && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{adminStats.totalUsers ?? 0}</div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+                    <Settings className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{adminStats.totalProjects ?? 0}</div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
+                    <Download className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{adminStats.totalTasks ?? 0}</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Per-user counts</CardTitle>
+                  <CardDescription>
+                    Number of projects and tasks per user (top 50)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="mb-4 flex items-center justify-end">
+                    <Button size="sm" onClick={async () => {
+                      try {
+                        const s = await api.get('/admin/stats');
+                        setAdminStats(s);
+                        toast({ title: 'Refreshed', description: 'Admin stats refreshed' });
+                      } catch (e) {
+                        toast({ title: 'Error', description: 'Failed to refresh admin stats', variant: 'destructive' });
+                      }
+                    }}>
+                      <Search className="h-4 w-4 mr-2" />
+                      Refresh
+                    </Button>
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto border rounded-lg">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Projects</TableHead>
+                          <TableHead>Tasks</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(adminStats.perUser || []).slice(0, 50).map((u: any) => (
+                          <TableRow key={u.id}>
+                            <TableCell>
+                              <div className="font-medium">{u.name || '—'}</div>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
+                            <TableCell>{u.projectCount ?? 0}</TableCell>
+                            <TableCell>{u.taskCount ?? 0}</TableCell>
+                          </TableRow>
+                        ))}
+                        {(!adminStats.perUser || adminStats.perUser.length === 0) && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No user stats available</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </CardContent>
               </Card>
             </div>

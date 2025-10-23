@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthedRequest, getReqUserId, ensureUser } from '../middleware/auth';
-import { createTask, getTasksByProject, updateTask, deleteTask, isProjectEditorOrOwner, getProjectById, getTaskById, getProjectsForUser, getStatusById, createTaskComment, getTaskComments, updateTaskComment, deleteTaskComment } from '../services/sqlClient';
+import { createTask, getTasksByProject, updateTask, deleteTask, isProjectEditorOrOwner, getProjectById, getTaskById, getProjectsForUser, getStatusById, createTaskComment, getTaskComments, updateTaskComment, deleteTaskComment, findUserByEmail } from '../services/sqlClient';
 import { realtimeService } from '../services/realtime';
 import { sanitizeInput } from '../middleware/validation';
 import { validateCreateTask, validateUpdateTask, validateDeleteTask, validateMoveTask, validatePagination } from '../middleware/validationSchemas';
@@ -355,7 +355,26 @@ router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response
     for (let i = 0; i < tasks.length; i++) {
       const taskData = tasks[i];
       
+
       try {
+        // Resolve assignee: accept assigneeId, assignedTo (id or email), or assignedToEmail
+        let assigneeIdResolved: string | undefined = undefined;
+        if (taskData.assigneeId) {
+          assigneeIdResolved = taskData.assigneeId;
+        } else if (taskData.assignedTo) {
+          // assignedTo might be an id or an email address
+          const at = typeof taskData.assignedTo === 'string' && taskData.assignedTo.includes('@');
+          if (at) {
+            const user = await findUserByEmail(taskData.assignedTo);
+            assigneeIdResolved = user?.id ?? undefined;
+          } else {
+            assigneeIdResolved = taskData.assignedTo;
+          }
+        } else if (taskData.assignedToEmail) {
+          const user = await findUserByEmail(taskData.assignedToEmail);
+          assigneeIdResolved = user?.id ?? undefined;
+        }
+
         const task = await createTask({
           title: taskData.title,
           description: taskData.description || '',
@@ -365,8 +384,8 @@ router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response
           priority: taskData.priority || 'medium',
           // accept either dueDate or dueTime (clients may send either)
           dueTime: taskData.dueTime ?? taskData.dueDate ?? null,
-          // accept either assigneeId or assignedTo
-          assigneeId: taskData.assigneeId ?? taskData.assignedTo ?? null,
+          // resolved assignee id (may be null)
+          assigneeId: assigneeIdResolved,
           // accept parentId or parent
           parentId: taskData.parentId ?? taskData.parent ?? null
         });
