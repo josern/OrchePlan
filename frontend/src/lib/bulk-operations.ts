@@ -4,7 +4,7 @@ interface BulkTaskData {
   title: string;
   description?: string;
   statusId?: string;
-  priority?: 'low' | 'medium' | 'high';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
   dueDate?: string;
   assignedTo?: string;
 }
@@ -26,7 +26,7 @@ export async function bulkImportTasks(
   tasks: BulkTaskData[]
 ): Promise<BulkImportResult> {
   try {
-    const response = await fetch('/api/tasks/bulk-import', {
+    const response = await fetch('/tasks/bulk-import', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -79,7 +79,7 @@ export async function throttledTaskImport(
         // Add small delay to avoid rapid-fire requests
         await new Promise(resolve => setTimeout(resolve, batchIndex * delay));
         
-        const response = await fetch('/api/tasks', {
+        const response = await fetch('/tasks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
