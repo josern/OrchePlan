@@ -302,6 +302,17 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                   isOpen={commentsModalOpen}
                   onClose={() => setCommentsModalOpen(false)}
                 />
+                                {/* Comment Prompt Modal for Subtask status changes */}
+                                {pendingStatusChange && (
+                                    <CommentPromptModal
+                                        isOpen={commentModalOpen}
+                                        onClose={handleCommentCancel}
+                                        onConfirm={handleCommentConfirm}
+                                        statusName={pendingStatusChange.statusName}
+                                        taskTitle={task.title}
+                                        isRequired={pendingStatusChange.isRequired}
+                                    />
+                                )}
         </>
         );
     }
