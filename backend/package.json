@@ -4,7 +4,7 @@
   "description": "A local application using Firestore emulator",
   "main": "src/server.ts",
   "scripts": {
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "build": "tsc",
     "dev": "nodemon --exec ts-node src/server.ts",
     "start-local": "bash scripts/start-local.sh",
@@ -24,16 +24,15 @@
     "smoke-test": "bash scripts/smoke-test.sh",
     "create-superuser": "ts-node scripts/create_superuser.ts",
     "check-users": "ts-node scripts/check_users.ts",
-    "test-lockout": "ts-node scripts/test_account_lockout.ts",
     "cleanup-lockouts": "ts-node scripts/cleanup_lockouts.ts",
     "db:backup": "bash scripts/backup-database.sh",
-    "db:restore": "bash scripts/restore-database.sh",
     "logs": "tail -f /var/log/orcheplan/app.log"
   },
   "dependencies": {
     "@dr.pogodin/csurf": "^1.16.6",
     "@prisma/client": "^6.17.1",
     "@types/csurf": "^1.11.5",
+    "axios": "^1.12.2",
     "bcrypt": "^5.1.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",

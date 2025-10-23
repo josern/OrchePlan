@@ -295,4 +295,109 @@ router.delete('/:id/comments/:commentId', ensureUser, async (req: AuthedRequest,
   }
 });
 
+// POST /tasks/bulk-import - Bulk import multiple tasks  
+router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response) => {
+  try {
+    // (removed development-only debug log)
+    // Defensive parsing: accept either { tasks: [...] , projectId } or a top-level array body
+    let { tasks, projectId } = req.body as { tasks?: any; projectId?: string };
+
+    // If client posted the array directly (some clients or proxies may do this), handle it
+    if (!tasks && Array.isArray(req.body)) {
+      tasks = req.body as any[];
+    }
+
+    // If tasks was stringified for some reason, try to parse it
+    if (typeof tasks === 'string') {
+      try {
+        const parsed = JSON.parse(tasks);
+        tasks = parsed;
+      } catch (e) {
+        // leave as-is; validation below will catch it
+      }
+    }
+
+    // If tasks looks like an object with numeric keys (e.g. form encoded), convert to array
+    if (tasks && typeof tasks === 'object' && !Array.isArray(tasks)) {
+      const numericKeys = Object.keys(tasks).filter(k => String(Number(k)) === k);
+      if (numericKeys.length > 0) {
+        tasks = numericKeys.sort((a, b) => Number(a) - Number(b)).map(k => tasks[k]);
+      }
+    }
+
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          // eslint-disable-next-line no-console
+          console.debug('bulk-import received invalid tasks payload. typeof(req.body)=', typeof req.body, 'bodyKeys=', Object.keys(req.body || {}), 'tasksType=', typeof tasks, 'tasksPreview=', JSON.stringify(Array.isArray(tasks) ? (tasks as any[]).slice(0,5) : tasks).slice(0,1000));
+        } catch (e) {
+          // ignore
+        }
+      }
+      return res.status(400).json({ error: 'Tasks array is required' });
+    }
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+
+    // Check if user has permission to create tasks in this project
+    const userId = req.userId as string;
+    const hasPermission = await isProjectEditorOrOwner(projectId, userId);
+    if (!hasPermission) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+
+    const results = [];
+    const errors = [];
+
+    // Process tasks in batches to avoid overwhelming the database
+    for (let i = 0; i < tasks.length; i++) {
+      const taskData = tasks[i];
+      
+      try {
+        const task = await createTask({
+          title: taskData.title,
+          description: taskData.description || '',
+          projectId,
+          // accept either statusId or status
+          statusId: taskData.statusId || taskData.status || null,
+          priority: taskData.priority || 'medium',
+          // accept either dueDate or dueTime (clients may send either)
+          dueTime: taskData.dueTime ?? taskData.dueDate ?? null,
+          // accept either assigneeId or assignedTo
+          assigneeId: taskData.assigneeId ?? taskData.assignedTo ?? null,
+          // accept parentId or parent
+          parentId: taskData.parentId ?? taskData.parent ?? null
+        });
+
+        results.push(task);
+        
+        // Broadcast each successful task creation
+        realtimeService.broadcastTaskUpdate(task, 'created');
+        
+      } catch (error) {
+        console.error(`Error creating task ${i + 1}:`, error);
+        errors.push({
+          index: i + 1,
+          title: taskData.title,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      imported: results.length,
+      failed: errors.length,
+      tasks: results,
+      errors: errors
+    });
+    
+  } catch (error) {
+    console.error('Error in bulk import:', error);
+    res.status(500).json({ error: 'Failed to import tasks' });
+  }
+});
+
 export default router;

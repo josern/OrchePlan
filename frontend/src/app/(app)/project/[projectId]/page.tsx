@@ -14,6 +14,7 @@ import TaskItem from '@/components/dashboard/task-item';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { exportTasksToCSV, importTasksFromCSV } from '@/lib/csv';
+import { bulkImportTasks, type BulkImportResult } from '@/lib/bulk-operations';
 import { useToast } from '@/hooks/use-toast';
 import { findProjectById } from '@/lib/projects';
 import { ComponentErrorBoundary } from '@/components/error-boundary';
@@ -359,127 +360,162 @@ export default function ProjectPage() {
   }, []);
 
   const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!project) return; // Early guard
+    if (!project) return;
     const file = event.target.files?.[0];
     if (!file) return;
 
     try {
-        const { mainTasks, subtaskGroups, warnings } = await importTasksFromCSV(
-          file, 
-          project.id, 
-          taskStatusOptions, 
-          tasks // Pass existing tasks to resolve parent relationships
-        );
-        
-        let totalImported = 0;
-        
-        // Step 1: Create all main tasks first
-        const createdMainTasks: Task[] = [];
-        for (const task of mainTasks) {
-          try {
-            const createdTask = await addTask(task);
-            createdMainTasks.push(createdTask);
-            totalImported++;
-          } catch (error) {
-            console.error('Error creating main task:', task.title, error);
-            warnings.push(`Failed to create main task: ${task.title}`);
-          }
+      const { mainTasks, subtaskGroups, warnings } = await importTasksFromCSV(
+        file,
+        project.id,
+        taskStatusOptions,
+        tasks
+      );
+
+      let totalImported = 0;
+      let allWarnings = [...warnings];
+
+      // Step 1: Bulk import all main tasks
+  let mainResult: BulkImportResult = { imported: 0, failed: 0, errors: [], tasks: [], success: true };
+      if (mainTasks.length > 0) {
+        mainResult = await bulkImportTasks(project.id, mainTasks.map(t => ({
+          title: t.title,
+          description: t.description,
+          priority: t.priority as any,
+          dueDate: t.dueTime,
+          statusId: t.status,
+          assignedTo: t.assigneeId
+        })));
+        totalImported += mainResult.imported;
+        if (mainResult.failed > 0) {
+          allWarnings.push(...mainResult.errors.map(e => `Failed to import main task: ${e.title || ''}`));
         }
-        
-        // Step 2: Create a map of newly created main task titles to IDs
-        const newTaskTitleToIdMap = new Map(
-          createdMainTasks.map(task => [task.title.toLowerCase().trim(), task.id])
-        );
-        
-        // Small delay to ensure main tasks are committed to database
-        if (createdMainTasks.length > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Step 2: Create a map of newly created main task titles to IDs (if needed for subtasks)
+      // Use returned mainResult.tasks (from bulk API) to map titles -> ids so subtasks can be linked
+      const createdTitleToId = new Map<string, string>();
+      // Normalization helper: lowercase, trim, collapse spaces, strip diacritics
+      const normalizeTitle = (s?: string) => {
+        if (!s) return '';
+        try {
+          // normalize to NFKD and remove combining marks
+          const n = s.normalize ? s.normalize('NFKD') : s;
+          // Remove Unicode diacritics and collapse spaces
+          return n.replace(/\p{M}/gu, '').replace(/\s+/g, ' ').toLowerCase().trim();
+        } catch (err) {
+          return String(s).toLowerCase().replace(/\s+/g, ' ').trim();
         }
-        
-        // Step 3: Create subtasks with proper parent references
-        for (const group of subtaskGroups) {
-          // Find parent ID (prefer newly created over existing to avoid conflicts)
-          const newParentId = newTaskTitleToIdMap.get(group.parentTitle.toLowerCase().trim());
-          const existingParentId = tasks.find(t => 
-            t.title.toLowerCase().trim() === group.parentTitle.toLowerCase().trim() &&
-            t.projectId === project.id // Ensure parent belongs to the same project
-          )?.id;
-          
-          // Prefer newly created parent over existing parent to avoid conflicts
-          const parentId = newParentId || existingParentId;
-          
-          if (parentId) {
-            // Create subtasks with parent reference
-            for (const subtask of group.subtasks) {
-              let attempts = 0;
-              const maxAttempts = 3;
-              
-              while (attempts < maxAttempts) {
-                try {
-                  await addTask({ ...subtask, parentId });
-                  totalImported++;
-                  break; // Success, exit retry loop
-                } catch (error) {
-                  attempts++;
-                  
-                  if (attempts < maxAttempts) {
-                    // Wait a bit before retrying, with exponential backoff
-                    const delay = 500 * Math.pow(2, attempts); // 500ms, 1s, 2s
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                  } else {
-                    // Final attempt failed - try creating as main task instead
-                    try {
-                      await addTask(subtask);
-                      totalImported++;
-                      warnings.push(`Created '${subtask.title}' as main task instead of subtask due to parent reference error.`);
-                      break;
-                    } catch (fallbackError) {
-                      const errorMessage = error instanceof Error ? error.message : String(error);
-                      warnings.push(`Failed to create subtask: ${subtask.title} (${errorMessage})`);
-                    }
-                  }
-                }
-              }
+      };
+
+      try {
+        if (mainResult && Array.isArray(mainResult.tasks)) {
+          mainResult.tasks.forEach((t: any) => {
+            if (t && t.title && t.id) {
+              createdTitleToId.set(normalizeTitle(String(t.title)), t.id);
             }
-          } else {
-            warnings.push(`Could not find parent task '${group.parentTitle}' for ${group.subtasks.length} subtasks.`);
-            // Try to create subtasks as main tasks instead
-            for (const subtask of group.subtasks) {
-              try {
-                await addTask(subtask); // Create without parentId
-                totalImported++;
-                warnings.push(`Created '${subtask.title}' as main task instead of subtask.`);
-              } catch (error) {
-                warnings.push(`Failed to create task: ${subtask.title}`);
-              }
-            }
-          }
-        }
-        
-        // Show results
-        if (warnings.length > 0) {
-          console.warn('Import warnings:', warnings);
-          toast({
-            title: "Import Completed with Warnings",
-            description: `${totalImported} tasks imported. ${warnings.length} warnings occurred. Check console for details.`,
           });
+        }
+      } catch (e) {
+        // ignore mapping errors; we'll fallback to existing tasks lookup below
+      }
+
+      // Step 3: Bulk import subtasks for each group
+      for (const group of subtaskGroups) {
+        // Skip empty subtask groups (avoid sending empty tasks array to server)
+        if (!group || !Array.isArray(group.subtasks) || group.subtasks.length === 0) {
+          continue;
+        }
+        // Find parent ID: prefer newly created main tasks (from mainResult),
+        // then fall back to tasks already present in client state.
+        const parentTitleKeyRaw = group.parentTitle || '';
+        const parentTitleKey = normalizeTitle(parentTitleKeyRaw);
+        // try exact created match first
+        let createdParentId = parentTitleKey ? createdTitleToId.get(parentTitleKey) : undefined;
+
+        // fallback: try fuzzy match among created titles (startsWith / includes)
+        if (!createdParentId && parentTitleKey) {
+          for (const [k, id] of createdTitleToId.entries()) {
+            if (k === parentTitleKey || k.startsWith(parentTitleKey) || k.includes(parentTitleKey)) {
+              createdParentId = id;
+              break;
+            }
+          }
+        }
+
+        // fallback to existing tasks in client state (normalize titles there too)
+        let existingParentId = createdParentId;
+        if (!existingParentId) {
+          const found = tasks.find(t => normalizeTitle(String(t.title)) === parentTitleKey && t.projectId === project.id);
+          if (found) existingParentId = found.id;
+        }
+
+        // as a last resort, try fuzzy match in client tasks (contains / startsWith)
+        if (!existingParentId && parentTitleKey) {
+          const foundFuzzy = tasks.find(t => {
+            const nt = normalizeTitle(String(t.title));
+            return nt === parentTitleKey || nt.startsWith(parentTitleKey) || nt.includes(parentTitleKey);
+          });
+          if (foundFuzzy) existingParentId = foundFuzzy.id;
+        }
+
+        if (existingParentId) {
+          // Bulk import subtasks with parentId
+          const subResult = await bulkImportTasks(project.id, group.subtasks.map(t => ({
+            title: t.title,
+            description: t.description,
+            priority: t.priority as any,
+            dueDate: t.dueTime,
+            statusId: t.status,
+            assignedTo: t.assigneeId,
+            parentId: existingParentId
+          })));
+          totalImported += subResult.imported;
+          if (subResult.failed > 0) {
+            allWarnings.push(...subResult.errors.map(e => `Failed to import subtask: ${e.title || ''}`));
+          }
         } else {
-          toast({
-            title: "Import Successful",
-            description: `${totalImported} tasks have been imported (${mainTasks.length} main tasks, ${subtaskGroups.reduce((sum, g) => sum + g.subtasks.length, 0)} subtasks).`,
-          });
+          // No parent found, import as main tasks
+          const subResult = await bulkImportTasks(project.id, group.subtasks.map(t => ({
+            title: t.title,
+            description: t.description,
+            priority: t.priority as any,
+            dueDate: t.dueTime,
+            statusId: t.status,
+            assignedTo: t.assigneeId
+          })));
+          totalImported += subResult.imported;
+          allWarnings.push(`Could not find parent task '${group.parentTitle}' for ${group.subtasks.length} subtasks. Imported as main tasks.`);
+          if (subResult.failed > 0) {
+            allWarnings.push(...subResult.errors.map(e => `Failed to import subtask: ${e.title || ''}`));
+          }
         }
-    } catch (error) {
+      }
+
+      // Show results
+      if (allWarnings.length > 0) {
+        console.warn('Import warnings:', allWarnings);
         toast({
-            variant: "destructive",
-            title: "Import Failed",
-            description: error instanceof Error ? error.message : "An unknown error occurred.",
+          title: "Import Completed with Warnings",
+          description: `${totalImported} tasks imported. ${allWarnings.length} warnings occurred. Check console for details.`,
         });
+      } else {
+        toast({
+          title: "Import Successful",
+          description: `${totalImported} tasks have been imported (${mainTasks.length} main tasks, ${subtaskGroups.reduce((sum, g) => sum + g.subtasks.length, 0)} subtasks).`,
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "An unknown error occurred.",
+      });
     }
     if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      fileInputRef.current.value = '';
     }
-  }, [project, taskStatusOptions, tasks, addTask, toast]);
+  }, [project, taskStatusOptions, tasks, toast]);
 
   // Conditional returns must come after ALL hooks
   if (loading) {

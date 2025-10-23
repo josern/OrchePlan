@@ -511,6 +511,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         realtimeClient.current = new RealtimeClient(baseUrl);
 
+        // Enable production debugging
+        realtimeClient.current.enableProductionDebug();
+
+        // Handle authentication failures
+        realtimeClient.current.on('auth_failed', (data: any) => {
+            console.error('SSE authentication failed - user may need to re-login');
+            // Could trigger a re-authentication flow here if needed
+        });
+
         // Set up event listeners for real-time updates
         realtimeClient.current.on('task_update', (data: any) => {
             const { action, data: taskData } = data;

@@ -1,6 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-import util from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as util from 'util';
 
 // Log levels
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';

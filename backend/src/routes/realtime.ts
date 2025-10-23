@@ -13,7 +13,8 @@ router.use((req: Request, res: Response, next: NextFunction) => {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cache-Control');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With, X-CSRF-Token, Cache-Control, Connection, Keep-Alive, Upgrade, Accept-Encoding, Accept-Language, User-Agent');
+    res.header('Access-Control-Expose-Headers', 'Content-Type, Cache-Control, Connection');
   }
   
   // Handle preflight for SSE
@@ -65,6 +66,46 @@ router.get('/test', (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     origin: req.headers.origin,
     userAgent: req.headers['user-agent']
+  });
+});
+
+// Test broadcast endpoint for debugging (only in development)
+router.post('/test-broadcast', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Test broadcasts disabled in production' });
+  }
+  
+  const { projectId, type = 'task_update', action = 'updated' } = req.body;
+  
+  if (!projectId) {
+    return res.status(400).json({ error: 'projectId required' });
+  }
+  
+  // Send test message
+  const testEvent = {
+    type,
+    action,
+    data: {
+      id: 'test-' + Date.now(),
+      projectId,
+      title: 'Test SSE Message',
+      description: 'This is a test message for SSE debugging'
+    },
+    timestamp: new Date().toISOString()
+  };
+  
+  const stats = realtimeService.getStats();
+  
+  // Broadcast test message
+  if (type === 'task_update') {
+    realtimeService.broadcastTaskUpdate(testEvent.data, action as any);
+  }
+  
+  res.json({
+    message: 'Test broadcast sent',
+    event: testEvent,
+    stats,
+    timestamp: new Date().toISOString()
   });
 });
 

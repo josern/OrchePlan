@@ -4,39 +4,29 @@ import { addCsrfHeaders } from './csrf';
 
 // Smart API base URL detection
 export const getApiBase = () => {
-  // Server-side rendering
+  // Always prioritize environment variable
+  const envApiBase = process.env.NEXT_PUBLIC_API_BASE;
+  
+  if (envApiBase) {
+    return envApiBase;
+  }
+  
+  // Server-side rendering fallback
   if (typeof window === 'undefined') {
-    return process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
+    return 'http://localhost:3001';
   }
   
-  // Client-side - use environment variable or auto-detect
-  if (process.env.NEXT_PUBLIC_API_BASE) {
-    return process.env.NEXT_PUBLIC_API_BASE;
-  }
-  
-  // Auto-detect based on current location
+  // Client-side fallback - only basic localhost detection
   const hostname = window.location.hostname;
-  const protocol = window.location.protocol;
   
-  // Local development
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:3000';
+    return 'http://localhost:3001';
   }
   
-  // External server - construct backend URL
-  // In Coder environment, use HTTPS for backend as well
-  const isCoderEnv = hostname.includes('coder.josern.com');
-  const backendProtocol = isCoderEnv ? 'https:' : protocol;
-  
-  if (isCoderEnv) {
-    // Special handling for Coder subdomain pattern
-    const backendHostname = hostname.replace(/^9002--/, '3000--');
-    const apiBase = `${backendProtocol}//${backendHostname}`;
-    return apiBase;
-  }
-  
-  const apiBase = `${backendProtocol}//${hostname}:3000`;
-  return apiBase;
+  // For any other domain, environment variable should be set
+  // This prevents hardcoded production URLs
+  console.warn('[API] No NEXT_PUBLIC_API_BASE environment variable set. Using localhost fallback.');
+  return 'http://localhost:3001';
 };
 
 const API_BASE = getApiBase();
