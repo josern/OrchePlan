@@ -132,6 +132,9 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                 statusName: targetStatus.name,
                 isRequired: !!targetStatus.requiresComment
             });
+            // If the task comments drawer/modal is open, close it so the comment prompt
+            // appears as the primary modal (prevents overlay stacking issues on sub-tasks)
+            setCommentsModalOpen(false);
             setCommentModalOpen(true);
             return; // Don't proceed with status change yet
         }
