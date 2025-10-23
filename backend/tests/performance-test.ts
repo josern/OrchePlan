@@ -28,7 +28,7 @@ interface PerformanceReport {
   metrics: PerformanceMetric[];
 }
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = 'http://localhost:3001';
 const ENDPOINTS = [
   { method: 'GET', path: '/', description: 'Health check' },
   { method: 'POST', path: '/auth/signup', description: 'User signup', data: { email: `perf-test-${Date.now()}@example.com`, password: 'testpass123', name: 'Perf Test User' } },

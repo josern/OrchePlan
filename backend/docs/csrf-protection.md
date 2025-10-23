@@ -91,7 +91,7 @@ fetch('/api/auth/login', {
 ### Manual Testing
 ```bash
 # Test protected endpoint without CSRF token (should fail)
-curl -X POST http://localhost:3000/api/auth/login \
+curl -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"password"}'
 
@@ -99,10 +99,10 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 # Test with valid CSRF token (should succeed)
 # 1. Get CSRF token
-curl http://localhost:3000/csrf-token
+curl http://localhost:3001/csrf-token
 
 # 2. Use token in request
-curl -X POST http://localhost:3000/api/auth/login \
+curl -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: <token-from-step-1>" \
   -d '{"email":"test@example.com","password":"password"}'

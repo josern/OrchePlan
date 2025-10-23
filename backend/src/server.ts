@@ -46,7 +46,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Configure trust proxy for proper client IP detection
 // This is essential for rate limiting to work correctly with reverse proxies
@@ -114,8 +114,14 @@ const bulkOperationLimiter = rateLimit({
 
 // Apply rate limiting (skip auth rate limiting in test environment)
 app.use(generalLimiter);
-if (process.env.NODE_ENV !== 'test') {
-    app.use('/auth', authLimiter);
+// Allow disabling auth rate limits via environment for local debugging / CI
+const disableAuthRateLimits = (process.env.DISABLE_AUTH_RATE_LIMITS || 'false').toLowerCase() === 'true';
+if (!disableAuthRateLimits) {
+    if (process.env.NODE_ENV !== 'test') {
+        app.use('/auth', authLimiter);
+    }
+} else {
+    logger.warn('Auth rate limits disabled via DISABLE_AUTH_RATE_LIMITS', { component: 'auth' });
 }
 app.use('/auth', authThreatDetection);
 
@@ -198,6 +204,7 @@ const csrfProtection = csrf({
 });
 
 // Create selective CSRF protection for critical operations
+
 const criticalOperationCSRF = (req: Request, res: Response, next: NextFunction) => {
     // Critical operations that always need CSRF protection
     const criticalPaths = [
@@ -212,9 +219,36 @@ const criticalOperationCSRF = (req: Request, res: Response, next: NextFunction) 
     const isCriticalOperation = criticalPaths.some(path => req.url.startsWith(path));
     const isStateChanging = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method);
 
+    // Extra debug logging for CSRF in development
+    if (process.env.NODE_ENV !== 'production') {
+        const csrfHeader = req.headers['x-csrf-token'];
+        const csrfCookie = req.cookies ? req.cookies._csrf : undefined;
+        logger.debug('CSRF DEBUG', {
+            url: req.url,
+            method: req.method,
+            csrfHeader,
+            csrfCookie,
+            cookies: req.cookies,
+            headers: req.headers
+        });
+    }
+
     if (isCriticalOperation && isStateChanging) {
         // Always apply CSRF protection to critical operations
-        return csrfProtection(req, res, next);
+        return csrfProtection(req, res, (err: any) => {
+            if (err) {
+                logger.warn('CSRF ERROR', {
+                    url: req.url,
+                    method: req.method,
+                    csrfHeader: req.headers['x-csrf-token'],
+                    csrfCookie: req.cookies ? req.cookies._csrf : undefined,
+                    cookies: req.cookies,
+                    headers: req.headers,
+                    error: err && err.message ? err.message : String(err)
+                });
+            }
+            next(err);
+        });
     }
 
     // For non-critical operations in development, skip CSRF
@@ -263,7 +297,7 @@ app.listen(PORT, '0.0.0.0', () => {
             `http://0.0.0.0:${PORT}`,
             `http://localhost:${PORT}`,
             ...(process.env.NODE_ENV !== 'production' 
-                ? [`https://3000--main--orcheplan--andreas.coder.josern.com`] 
+                ? [`https://3001--main--orcheplan--andreas.coder.josern.com`] 
                 : [])
         ]
     });

@@ -51,7 +51,7 @@ my-firestore-local-app
 
 ## Usage
 
-- The application will run on `http://localhost:3000` (or the port specified in your configuration).
+- The application will run on `http://localhost:3001` (or the port specified in your configuration).
 - You can interact with the Firestore emulator through the defined routes.
 
 ## Logging System

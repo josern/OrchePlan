@@ -16,7 +16,7 @@
     "start:backend": "cd backend && npm run start",
     "start:frontend": "cd frontend && npm run start",
     "deploy": "bash scripts/deploy-production.sh",
-    "health-check": "curl -f http://localhost:3000/health && curl -f http://localhost:3001/api/health"
+  "health-check": "curl -f http://localhost:3001/health && curl -f http://localhost:3001/api/health"
   },
   "devDependencies": {
     "concurrently": "^8.0.0"

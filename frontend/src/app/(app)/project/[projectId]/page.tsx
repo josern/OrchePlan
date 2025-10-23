@@ -393,15 +393,71 @@ export default function ProjectPage() {
       }
 
       // Step 2: Create a map of newly created main task titles to IDs (if needed for subtasks)
-      // NOTE: If you want to update UI with new tasks, you may need to refetch or update state here.
+      // Use returned mainResult.tasks (from bulk API) to map titles -> ids so subtasks can be linked
+      const createdTitleToId = new Map<string, string>();
+      // Normalization helper: lowercase, trim, collapse spaces, strip diacritics
+      const normalizeTitle = (s?: string) => {
+        if (!s) return '';
+        try {
+          // normalize to NFKD and remove combining marks
+          const n = s.normalize ? s.normalize('NFKD') : s;
+          // Remove Unicode diacritics and collapse spaces
+          return n.replace(/\p{M}/gu, '').replace(/\s+/g, ' ').toLowerCase().trim();
+        } catch (err) {
+          return String(s).toLowerCase().replace(/\s+/g, ' ').trim();
+        }
+      };
+
+      try {
+        if (mainResult && Array.isArray(mainResult.tasks)) {
+          mainResult.tasks.forEach((t: any) => {
+            if (t && t.title && t.id) {
+              createdTitleToId.set(normalizeTitle(String(t.title)), t.id);
+            }
+          });
+        }
+      } catch (e) {
+        // ignore mapping errors; we'll fallback to existing tasks lookup below
+      }
 
       // Step 3: Bulk import subtasks for each group
       for (const group of subtaskGroups) {
-        // Find parent ID (prefer existing to avoid conflicts)
-        const existingParentId = tasks.find(t =>
-          t.title.toLowerCase().trim() === group.parentTitle.toLowerCase().trim() &&
-          t.projectId === project.id
-        )?.id;
+        // Skip empty subtask groups (avoid sending empty tasks array to server)
+        if (!group || !Array.isArray(group.subtasks) || group.subtasks.length === 0) {
+          continue;
+        }
+        // Find parent ID: prefer newly created main tasks (from mainResult),
+        // then fall back to tasks already present in client state.
+        const parentTitleKeyRaw = group.parentTitle || '';
+        const parentTitleKey = normalizeTitle(parentTitleKeyRaw);
+        // try exact created match first
+        let createdParentId = parentTitleKey ? createdTitleToId.get(parentTitleKey) : undefined;
+
+        // fallback: try fuzzy match among created titles (startsWith / includes)
+        if (!createdParentId && parentTitleKey) {
+          for (const [k, id] of createdTitleToId.entries()) {
+            if (k === parentTitleKey || k.startsWith(parentTitleKey) || k.includes(parentTitleKey)) {
+              createdParentId = id;
+              break;
+            }
+          }
+        }
+
+        // fallback to existing tasks in client state (normalize titles there too)
+        let existingParentId = createdParentId;
+        if (!existingParentId) {
+          const found = tasks.find(t => normalizeTitle(String(t.title)) === parentTitleKey && t.projectId === project.id);
+          if (found) existingParentId = found.id;
+        }
+
+        // as a last resort, try fuzzy match in client tasks (contains / startsWith)
+        if (!existingParentId && parentTitleKey) {
+          const foundFuzzy = tasks.find(t => {
+            const nt = normalizeTitle(String(t.title));
+            return nt === parentTitleKey || nt.startsWith(parentTitleKey) || nt.includes(parentTitleKey);
+          });
+          if (foundFuzzy) existingParentId = foundFuzzy.id;
+        }
 
         if (existingParentId) {
           // Bulk import subtasks with parentId

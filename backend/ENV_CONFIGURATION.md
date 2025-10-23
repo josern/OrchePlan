@@ -23,8 +23,9 @@ cp .env.production.example .env.production
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `NODE_ENV` | Yes | Environment mode | `development`, `production` |
-| `PORT` | No | Server port | `3001` (default: 3000) |
+| `PORT` | No | Server port | `3001` (default: 3001) |
 | `HOST` | No | Server host | `0.0.0.0` (default: localhost) |
+| `DISABLE_AUTH_RATE_LIMITS` | No | When `true`, disables auth-related rate limits in development to allow automated signup/login flows. Use only in dev/test. | `false` |
 
 ### Database Configuration
 
@@ -76,7 +77,7 @@ cp .env.production.example .env.production
 NODE_ENV=development
 DATABASE_URL=postgresql://user:pass@localhost:5432/orcheplan_dev
 JWT_SECRET=dev-secret
-FRONTEND_ORIGINS=http://localhost:3000
+FRONTEND_ORIGINS=http://localhost:3001
 # No AUTH_COOKIE_DOMAIN needed for localhost
 ```
 

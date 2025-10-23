@@ -4,6 +4,22 @@ function getCookie(name: string): string | undefined {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
   return match ? decodeURIComponent(match[2]) : undefined;
 }
+
+// Fallback: fetch CSRF token from server endpoint when cookie is httpOnly
+let _cachedCsrfToken: string | undefined;
+async function fetchCsrfToken(): Promise<string | undefined> {
+  if (_cachedCsrfToken) return _cachedCsrfToken;
+  try {
+    const resp = await fetch(`${API_BASE}/csrf-token`, { credentials: 'include' });
+    if (!resp.ok) return undefined;
+    const body = await resp.json();
+    _cachedCsrfToken = body && body.csrfToken ? String(body.csrfToken) : undefined;
+    return _cachedCsrfToken;
+  } catch (err) {
+    console.warn('Failed to fetch CSRF token', err);
+    return undefined;
+  }
+}
 // Utility for handling bulk operations without triggering security alerts
 
 interface BulkTaskData {
@@ -35,6 +51,10 @@ export async function bulkImportTasks(
   tasks: BulkTaskData[]
 ): Promise<BulkImportResult> {
   try {
+    // Validate input early to give a clear error instead of a server 400
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      throw new Error('No tasks to import — tasks array is empty');
+    }
     // Map frontend fields to backend expected fields
     const mappedTasks = tasks.map(({ dueDate, assignedTo, ...rest }) => ({
       ...rest,
@@ -42,7 +62,11 @@ export async function bulkImportTasks(
       assigneeId: assignedTo || null
     }));
 
-    const csrfToken = getCookie('_csrf');
+    // try cookie first (may be httpOnly), otherwise fetch token endpoint
+    let csrfToken = getCookie('_csrf');
+    if (!csrfToken) csrfToken = await fetchCsrfToken();
+  // (removed debug logs)
+
     const response = await fetch(`${API_BASE}/tasks/bulk-import`, {
       method: 'POST',
       headers: {
@@ -52,12 +76,17 @@ export async function bulkImportTasks(
       credentials: 'include',
       body: JSON.stringify({
         projectId,
-        tasks: mappedTasks
+        tasks: mappedTasks,
+        // also include token in body as a fallback in case a proxy/CDN strips headers
+        ...(csrfToken ? { _csrf: csrfToken } : {})
       })
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const text = await response.text().catch(() => '');
+      // eslint-disable-next-line no-console
+      console.error('[bulkImport] server error', response.status, text);
+      throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
     const result = await response.json();
@@ -86,6 +115,10 @@ export async function throttledTaskImport(
   const successful: any[] = [];
   const failed: any[] = [];
 
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    throw new Error('No tasks to import — tasks array is empty');
+  }
+
   // Process in smaller batches to avoid rate limiting
   for (let i = 0; i < tasks.length; i += batchSize) {
     const batch = tasks.slice(i, i + batchSize);
@@ -97,7 +130,10 @@ export async function throttledTaskImport(
         await new Promise(resolve => setTimeout(resolve, batchIndex * delay));
         
 
-        const csrfToken = getCookie('_csrf');
+        // try cookie first, otherwise fetch token endpoint
+        let csrfToken = getCookie('_csrf');
+        if (!csrfToken) csrfToken = await fetchCsrfToken();
+  // (removed debug logs)
         const response = await fetch(`${API_BASE}/tasks`, {
           method: 'POST',
           headers: {
@@ -107,12 +143,16 @@ export async function throttledTaskImport(
           credentials: 'include',
           body: JSON.stringify({
             ...taskData,
-            projectId
+            projectId,
+            ...(csrfToken ? { _csrf: csrfToken } : {})
           })
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          const text = await response.text().catch(() => '');
+          // eslint-disable-next-line no-console
+          console.error('[throttledTaskImport] server error', response.status, text);
+          throw new Error(`HTTP ${response.status}: ${text}`);
         }
 
         const task = await response.json();
