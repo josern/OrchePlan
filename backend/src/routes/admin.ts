@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthedRequest, requireAdmin } from '../middleware/auth';
 import { AccountLockoutService } from '../services/accountLockout';
-import { findUserByEmail, findUserById } from '../services/sqlClient';
+import { findUserByEmail, findUserById, deleteProject } from '../services/sqlClient';
 import { createSecureValidation } from '../middleware/validation';
 import { createComponentLogger } from '../utils/logger';
 import prisma from '../services/sqlClient';
@@ -707,9 +707,38 @@ router.delete('/users/:id',
       if (user.role === 'superuser' && admin?.role !== 'superuser') {
         return res.status(403).json({ error: 'Only superusers can delete other superuser accounts' });
       }
-      
-      // Delete the user (this will cascade to related records)
-      await prisma.user.delete({ where: { id } });
+        // Handle projects owned by the user. For each project:
+        // - if there are no other members with role 'owner', delete the project automatically
+        // - if there are other owners, collect them as blocking projects and return an error
+        const ownedProjects = await prisma.project.findMany({ where: { ownerId: id }, select: { id: true, name: true } });
+        const blocking: Array<{ id: string; name: string; otherOwners: any[] }> = [];
+
+        for (const proj of ownedProjects) {
+          // find project members with role 'owner' excluding the target user
+          const otherOwners = await prisma.projectMember.findMany({ where: { projectId: proj.id, role: 'owner', userId: { not: id } }, select: { userId: true } });
+          if (otherOwners.length === 0) {
+            // no other owners - delete the project (safe transaction in deleteProject)
+            try {
+              await deleteProject(proj.id);
+            } catch (e) {
+              logger.error('Failed to delete owned project during user deletion', { projectId: proj.id, adminId, error: e });
+              blocking.push({ id: proj.id, name: proj.name, otherOwners: [] });
+            }
+          } else {
+            blocking.push({ id: proj.id, name: proj.name, otherOwners });
+          }
+        }
+
+        if (blocking.length > 0) {
+          return res.status(400).json({
+            error: 'User owns projects that require reassignment',
+            projects: blocking,
+            message: 'Some projects have other owners and need reassignment before deleting the user. Projects with no other owners were deleted automatically.'
+          });
+        }
+
+        // Safe to delete (all owned projects either deleted or none existed)
+        await prisma.user.delete({ where: { id } });
       
       logger.error('Admin deleted user account', {
         adminId,
