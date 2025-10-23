@@ -1,3 +1,9 @@
+// Helper to read a cookie value by name
+function getCookie(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : undefined;
+}
 // Utility for handling bulk operations without triggering security alerts
 
 interface BulkTaskData {
@@ -29,15 +35,24 @@ export async function bulkImportTasks(
   tasks: BulkTaskData[]
 ): Promise<BulkImportResult> {
   try {
+    // Map frontend fields to backend expected fields
+    const mappedTasks = tasks.map(({ dueDate, assignedTo, ...rest }) => ({
+      ...rest,
+      dueTime: dueDate || null,
+      assigneeId: assignedTo || null
+    }));
+
+    const csrfToken = getCookie('_csrf');
     const response = await fetch(`${API_BASE}/tasks/bulk-import`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
       },
       credentials: 'include',
       body: JSON.stringify({
         projectId,
-        tasks
+        tasks: mappedTasks
       })
     });
 
@@ -81,9 +96,14 @@ export async function throttledTaskImport(
         // Add small delay to avoid rapid-fire requests
         await new Promise(resolve => setTimeout(resolve, batchIndex * delay));
         
-  const response = await fetch(`${API_BASE}/tasks`, {
+
+        const csrfToken = getCookie('_csrf');
+        const response = await fetch(`${API_BASE}/tasks`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+          },
           credentials: 'include',
           body: JSON.stringify({
             ...taskData,
