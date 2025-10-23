@@ -21,12 +21,15 @@ export interface BulkImportResult {
  * Bulk import tasks using the dedicated bulk endpoint
  * Prevents rate limiting issues by using single API call
  */
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'https://api.orcheplan.com';
+
 export async function bulkImportTasks(
-  projectId: string, 
+  projectId: string,
   tasks: BulkTaskData[]
 ): Promise<BulkImportResult> {
   try {
-    const response = await fetch('/tasks/bulk-import', {
+    const response = await fetch(`${API_BASE}/tasks/bulk-import`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -44,7 +47,6 @@ export async function bulkImportTasks(
 
     const result = await response.json();
     return result;
-    
   } catch (error) {
     console.error('Bulk import failed:', error);
     throw error;
@@ -79,7 +81,7 @@ export async function throttledTaskImport(
         // Add small delay to avoid rapid-fire requests
         await new Promise(resolve => setTimeout(resolve, batchIndex * delay));
         
-        const response = await fetch('/tasks', {
+  const response = await fetch(`${API_BASE}/tasks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
