@@ -33,13 +33,9 @@ router.get('/events', authMiddleware, async (req: any, res: Response) => {
     const userId = req.user.id;
     const clientId = `${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Get all project IDs the user has access to
-    const projects = await getProjectsForUser(userId);
-    const projectIds = projects.map((p: any) => p.id);
-    
-    
-    // Add client to realtime service
-    realtimeService.addClient(clientId, userId, res, projectIds);
+  // For project-scoped subscriptions we'll start with no project subscriptions.
+  // The client will call /realtime/subscribe after connection to subscribe to a specific project.
+  realtimeService.addClient(clientId, userId, res, []);
     
   } catch (error) {
     console.error('[SSE] Error setting up client:', error);
@@ -107,6 +103,93 @@ router.post('/test-broadcast', (req: Request, res: Response) => {
     stats,
     timestamp: new Date().toISOString()
   });
+});
+
+// Subscribe client to a project channel
+router.post('/subscribe', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const { clientId, projectId } = req.body;
+    if (!clientId || !projectId) return res.status(400).json({ error: 'clientId and projectId required' });
+
+    // Authenticated user id
+    const userId = req.user?.id;
+
+    // Verify that the clientId belongs to the authenticated user
+    const ownerId = realtimeService.getClientUserId(clientId);
+    if (!ownerId || ownerId !== userId) return res.status(403).json({ error: 'clientId does not belong to authenticated user' });
+
+    // Verify that the authenticated user actually has access to the project
+    try {
+      const userProjects = await getProjectsForUser(userId);
+      const hasAccess = Array.isArray(userProjects) && userProjects.some((p: any) => p.id === projectId);
+      if (!hasAccess) return res.status(403).json({ error: 'user does not have access to project' });
+    } catch (err) {
+      console.error('Error verifying project access for subscribe', err);
+      return res.status(500).json({ error: 'failed to verify project access' });
+    }
+
+    const success = realtimeService.subscribeClientToProject(clientId, projectId);
+    if (!success) return res.status(404).json({ error: 'client not found' });
+    return res.json({ success: true, clientId, projectId });
+  } catch (error) {
+    console.error('Error subscribing client to project', error);
+    return res.status(500).json({ error: 'subscribe failed' });
+  }
+});
+
+// Unsubscribe client from a project channel
+router.post('/unsubscribe', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const { clientId, projectId } = req.body;
+    if (!clientId || !projectId) return res.status(400).json({ error: 'clientId and projectId required' });
+
+    // Authenticated user id
+    const userId = req.user?.id;
+
+    // Verify that the clientId belongs to the authenticated user
+    const ownerId = realtimeService.getClientUserId(clientId);
+    if (!ownerId || ownerId !== userId) return res.status(403).json({ error: 'clientId does not belong to authenticated user' });
+
+    // Verify that the authenticated user actually has access to the project
+    try {
+      const userProjects = await getProjectsForUser(userId);
+      const hasAccess = Array.isArray(userProjects) && userProjects.some((p: any) => p.id === projectId);
+      if (!hasAccess) return res.status(403).json({ error: 'user does not have access to project' });
+    } catch (err) {
+      console.error('Error verifying project access for unsubscribe', err);
+      return res.status(500).json({ error: 'failed to verify project access' });
+    }
+
+    const success = realtimeService.unsubscribeClientFromProject(clientId, projectId);
+    if (!success) return res.status(404).json({ error: 'client not found' });
+    return res.json({ success: true, clientId, projectId });
+  } catch (error) {
+    console.error('Error unsubscribing client from project', error);
+    return res.status(500).json({ error: 'unsubscribe failed' });
+  }
+});
+
+// List subscriptions for a client (dev+prod) - returns array of projectIds
+router.get('/subscriptions', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const clientId = String(req.query.clientId || req.body?.clientId || '');
+    if (!clientId) return res.status(400).json({ error: 'clientId required' });
+
+    // Authenticated user id
+    const userId = req.user?.id;
+
+    // Verify ownership
+    const ownerId = realtimeService.getClientUserId(clientId);
+    if (!ownerId || ownerId !== userId) return res.status(403).json({ error: 'clientId does not belong to authenticated user' });
+
+    const subs = realtimeService.getClientSubscriptions(clientId);
+    if (!subs) return res.status(404).json({ error: 'client not found' });
+
+    return res.json({ clientId, projects: subs });
+  } catch (error) {
+    console.error('Error listing subscriptions', error);
+    return res.status(500).json({ error: 'failed to list subscriptions' });
+  }
 });
 
 export default router;

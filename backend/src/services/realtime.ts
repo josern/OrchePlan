@@ -14,7 +14,7 @@ class RealtimeService {
   private clients: Map<string, Client> = new Map();
 
   // Add a client connection
-  addClient(clientId: string, userId: string, res: Response, projectIds: string[]) {
+  addClient(clientId: string, userId: string, res: Response, projectIds: string[] = []) {
     logger.info('Setting up SSE client connection', {
       clientId,
       userId,
@@ -35,7 +35,7 @@ class RealtimeService {
     });
 
     // Store client info
-    this.clients.set(clientId, { id: clientId, userId, res, projectIds });
+  this.clients.set(clientId, { id: clientId, userId, res, projectIds });
     
     // Send initial connection confirmation
     const welcomeMessage = JSON.stringify({ 
@@ -91,6 +91,62 @@ class RealtimeService {
       projectCount: projectIds.length,
       totalActiveClients: this.clients.size 
     });
+  }
+
+  // Return the userId for a given clientId (or null if not found)
+  getClientUserId(clientId: string): string | null {
+    const client = this.clients.get(clientId);
+    return client ? client.userId : null;
+  }
+
+  // Subscribe a connected client to a project
+  subscribeClientToProject(clientId: string, projectId: string) {
+    const client = this.clients.get(clientId);
+    if (!client) return false;
+    if (!client.projectIds.includes(projectId)) {
+      client.projectIds.push(projectId);
+    }
+    // Notify client about subscription change
+    try {
+      const event = {
+        type: 'subscription_update',
+        action: 'subscribed',
+        projectId,
+        projects: client.projectIds,
+        timestamp: new Date().toISOString()
+      };
+      client.res.write(`data: ${JSON.stringify(event)}\n\n`);
+    } catch (err) {
+      logger.warn('Failed to send subscription update to client', { clientId, projectId }, err);
+    }
+    return true;
+  }
+
+  // Unsubscribe a connected client from a project
+  unsubscribeClientFromProject(clientId: string, projectId: string) {
+    const client = this.clients.get(clientId);
+    if (!client) return false;
+    client.projectIds = client.projectIds.filter(id => id !== projectId);
+    // Notify client about unsubscription
+    try {
+      const event = {
+        type: 'subscription_update',
+        action: 'unsubscribed',
+        projectId,
+        projects: client.projectIds,
+        timestamp: new Date().toISOString()
+      };
+      client.res.write(`data: ${JSON.stringify(event)}\n\n`);
+    } catch (err) {
+      logger.warn('Failed to send unsubscription update to client', { clientId, projectId }, err);
+    }
+    return true;
+  }
+
+  // Return subscriptions (projectIds) for a client
+  getClientSubscriptions(clientId: string): string[] | null {
+    const client = this.clients.get(clientId);
+    return client ? client.projectIds.slice() : null;
   }
 
   // Remove a client connection

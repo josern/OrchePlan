@@ -79,6 +79,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const [groupByStatus, setGroupByStatusState] = useState<boolean>(true);
   const router = useRouter();
   const pathname = usePathname();
+    // derive active project id from pathname when on a project page
+    const activeProjectId = useMemo(() => {
+        try {
+            // match /project/<id> or /project/<id>/...
+            const m = pathname?.match(/\/project\/([^\/]+)/);
+            return m ? m[1] : null;
+        } catch (e) {
+            return null;
+        }
+    }, [pathname]);
 
   // Debounced task updates for drag operations
   const pendingTaskUpdates = useRef<Map<string, Task>>(new Map());
@@ -87,6 +97,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Realtime client for SSE updates
   const realtimeClient = useRef<RealtimeClient | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+    const prevActiveProjectRef = useRef<string | null>(null);
 
     // normalize a single project object from backend into frontend shape
     const normalizeProject = (p: any) => {
@@ -356,35 +367,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [currentUser, loading, pathname, router]);
 
   useEffect(() => {
-    if (!currentUser || projects.length === 0) {
+    // Only monitor tasks for the active project to reduce load.
+    // If we're not on a project page (for example /admin or /settings), do nothing.
+    if (!currentUser || !activeProjectId) {
         setTasks([]);
+        // Also disconnect realtime client and stop any polling if present
+        if (realtimeClient.current) {
+            realtimeClient.current.disconnect();
+        }
         return;
     }
 
-    // Initial fetch of tasks
-    const getAllProjectIds = (projs: Project[]): string[] => {
-        let ids: string[] = [];
-        projs.forEach(p => {
-            ids.push(p.id);
-            if (p.subProjects) {
-                ids = ids.concat(getAllProjectIds(p.subProjects));
-            }
-        });
-        return ids;
-    };
+    // We're only interested in a single activeProjectId
+    const allProjectIds = [activeProjectId];
 
-    const allProjectIds = getAllProjectIds(projects);
-
-    if (allProjectIds.length === 0) {
-        setTasks([]);
-        return;
-    }
-
-    const CHUNK_SIZE = 100; // Increased from 30 to reduce API calls
-    const projectChunks: string[][] = [];
-    for (let i = 0; i < allProjectIds.length; i += CHUNK_SIZE) {
-        projectChunks.push(allProjectIds.slice(i, i + CHUNK_SIZE));
-    }
+    const CHUNK_SIZE = 100; // Not used for single project but keep shape consistent
+    const projectChunks: string[][] = [[activeProjectId]];
 
     // Normalize task data
     const normalizeTask = (t: any) => ({
@@ -509,7 +507,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const baseUrl = getApiBase();
 
-        realtimeClient.current = new RealtimeClient(baseUrl);
+    realtimeClient.current = new RealtimeClient(baseUrl);
 
         // Enable production debugging
         realtimeClient.current.enableProductionDebug();
@@ -520,10 +518,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // Could trigger a re-authentication flow here if needed
         });
 
+        // When client is connected, ensure we subscribe to the active project
+        realtimeClient.current.on('connected', (data: any) => {
+            try {
+                if (activeProjectId) {
+                    realtimeClient.current?.subscribe(activeProjectId);
+                }
+            } catch (e) {
+                console.warn('Failed to subscribe to active project on connect', e);
+            }
+        });
+
         // Set up event listeners for real-time updates
         realtimeClient.current.on('task_update', (data: any) => {
             const { action, data: taskData } = data;
             const normalizedTask = normalizeTask(taskData);
+
+            // Only process task updates for the active project to avoid unnecessary work
+            if (!activeProjectId || normalizedTask.projectId !== activeProjectId) return;
 
             setTasks(prev => {
                 switch (action) {
@@ -548,8 +560,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
 
         realtimeClient.current.on('project_update', (data: any) => {
-            // Handle project updates - refresh projects to get updated membership/access
-            refreshProjects();
+            // Only refresh project lists when the active project may be affected
+            const projId = data?.data?.id || data?.projectId || data?.id;
+            if (!projId) return;
+            if (projId === activeProjectId) refreshProjects();
         });
 
         realtimeClient.current.on('status_update', (data: any) => {
@@ -598,7 +612,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         window.removeEventListener('blur', handleBlur);
         setIsRealtimeConnected(false);
     };
-}, [currentUser, projects]);
+}, [currentUser, activeProjectId]);
+
+    // Manage subscriptions to project-scoped SSE channels when active project changes
+    useEffect(() => {
+        if (!realtimeClient.current) return;
+
+        const prev = prevActiveProjectRef.current;
+
+        // If leaving a project view, unsubscribe
+        if (!activeProjectId && prev) {
+            try {
+                realtimeClient.current.unsubscribe(prev);
+            } catch (e) {
+                console.warn('Failed to unsubscribe from previous project', e);
+            }
+            prevActiveProjectRef.current = null;
+            return;
+        }
+
+        // If switched projects, unsubscribe previous and subscribe new
+        if (activeProjectId && prev !== activeProjectId) {
+            if (prev) {
+                try { realtimeClient.current.unsubscribe(prev); } catch (e) { /* ignore */ }
+            }
+            try {
+                realtimeClient.current.subscribe(activeProjectId);
+                prevActiveProjectRef.current = activeProjectId;
+            } catch (e) {
+                console.warn('Failed to subscribe to active project', e);
+            }
+        }
+    }, [activeProjectId]);
 
     const addDefaultTaskStatuses = async (projectId: string) => {
         if (!currentUser) throw new Error('User not authenticated');
