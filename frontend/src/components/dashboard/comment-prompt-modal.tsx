@@ -36,6 +36,10 @@ const CommentPromptModal = memo<CommentPromptModalProps>(function CommentPromptM
     if (isRequired && comment.trim() === '') {
       return; // Don't allow empty comment if required
     }
+    // Log for debugging: confirm clicked and payload
+    // This helps diagnose cases where the UI opens the modal but no network
+    // request is observed because the confirm handler wasn't invoked.
+    try { console.debug('[CommentPromptModal] handleConfirm, comment=', comment.trim()); } catch (e) {}
     onConfirm(comment.trim());
     setComment('');
     if (modalId && modal) {
@@ -45,6 +49,7 @@ const CommentPromptModal = memo<CommentPromptModalProps>(function CommentPromptM
 
   const handleClose = () => {
     setComment('');
+    try { console.debug('[CommentPromptModal] handleClose'); } catch (e) {}
     if (modalId && modal) {
       modal.closeModal(modalId);
       return;

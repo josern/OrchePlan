@@ -233,7 +233,9 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
                 taskData,
               });
               setIsStatusChangeRequired(requiresComment || false);
+              try { console.debug('[AddTaskDialog] status change requires comment, targetStatus=', targetStatus); } catch (e) {}
               if (modal) {
+                try { console.debug('[AddTaskDialog] showing CommentPromptModal via modal registry'); } catch (e) {}
                 modal.closeAll();
                 modal.showModal(
                   <CommentPromptModal
@@ -246,6 +248,7 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
                   />
                 );
               } else {
+                try { console.debug('[AddTaskDialog] modal registry not available, using fallback setIsCommentModalOpen'); } catch (e) {}
                 setIsCommentModalOpen(true);
               }
               return; // Don't proceed immediately

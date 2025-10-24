@@ -262,19 +262,40 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
                         taskTitle: task.title,
                         isRequired: !!targetStatus.requiresComment
                     });
+                    try { console.debug('[KanbanBoard] shouldShowModal for drag move, targetStatus=', targetStatus, 'task=', taskId); } catch (e) {}
                     if (modal) {
+                        try { console.debug('[KanbanBoard] using modal registry to show CommentPromptModal'); } catch (e) {}
                         modal.closeAll();
+                        // Capture the taskId/newStatusId into the onConfirm handler directly to avoid
+                        // relying on pendingMove state which may not be applied synchronously.
+                        const capturedTaskId = taskId;
+                        const capturedNewStatusId = newStatusId;
                         modal.showModal(
                           <CommentPromptModal
                             isOpen={true}
                             onClose={() => { /* closed by modalId when available */ }}
-                            onConfirm={handleCommentConfirm}
+                            onConfirm={async (comment: string) => {
+                              try {
+                                try { console.debug('[KanbanBoard] modal onConfirm inline called for move', capturedTaskId, capturedNewStatusId, comment); } catch(e){}
+                                await moveTaskToStatus(capturedTaskId, capturedNewStatusId, comment || undefined);
+                                // Notify parent/UI of the change
+                                onStatusChange(capturedTaskId, capturedNewStatusId as TaskStatus);
+                              } catch (error) {
+                                console.error('Failed to move task with comment (inline handler):', error);
+                                // Fallback to still update UI so it doesn't look stale
+                                onStatusChange(capturedTaskId, capturedNewStatusId as TaskStatus);
+                              } finally {
+                                setCommentModalOpen(false);
+                                setPendingMove(null);
+                              }
+                            }}
                             statusName={targetStatus.name}
                             taskTitle={task.title}
                             isRequired={!!targetStatus.requiresComment}
                           />
                         );
                     } else {
+                        try { console.debug('[KanbanBoard] modal registry not available, using fallback setCommentModalOpen'); } catch (e) {}
                         setCommentModalOpen(true);
                     }
                 } else {
@@ -290,6 +311,7 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
   }, [tasks, taskStatusOptions, onStatusChange]);
 
   const handleCommentConfirm = useCallback(async (comment: string) => {
+    try { console.debug('[KanbanBoard] handleCommentConfirm called, comment=', comment, 'pendingMove=', pendingMove); } catch (e) {}
     if (pendingMove) {
         try {
             // Use the new API endpoint that handles comment requirements

@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthedRequest, getReqUserId, ensureUser } from '../middleware/auth';
-import { createTask, getTasksByProject, updateTask, deleteTask, isProjectEditorOrOwner, getProjectById, getTaskById, getProjectsForUser, getStatusById, createTaskComment, getTaskComments, updateTaskComment, deleteTaskComment, findUserByEmail } from '../services/sqlClient';
+import { createTask, getTasksByProject, updateTask, deleteTask, isProjectEditorOrOwner, getProjectById, getTaskById, getProjectsForUser, getStatusById, listStatusesByProject, createTaskComment, getTaskComments, updateTaskComment, deleteTaskComment, findUserByEmail } from '../services/sqlClient';
 import { realtimeService } from '../services/realtime';
 import { sanitizeInput } from '../middleware/validation';
 import { validateCreateTask, validateUpdateTask, validateDeleteTask, validateMoveTask, validatePagination } from '../middleware/validationSchemas';
@@ -103,10 +103,13 @@ router.post('/:id/move', ensureUser, validateMoveTask, async (req: AuthedRequest
     const ok = await isProjectEditorOrOwner(existing.projectId, uid);
     if (!ok) return res.status(403).json({ error: 'Forbidden' });
 
-    // Check if the target status requires a comment
+    // Check if the target status exists and whether it requires a comment
     const targetStatus = await getStatusById(statusId);
     if (!targetStatus) return res.status(400).json({ error: 'Status not found' });
-    
+
+    // If the target status requires a comment and none was provided, return a helpful 400
+    // so callers (or clients) can prompt the user to provide one. This keeps the
+    // contract compatible with previous behavior which returned requiresComment:true.
     if (targetStatus.requiresComment && (!comment || comment.trim() === '')) {
       return res.status(400).json({ 
         error: 'Comment required', 
@@ -115,14 +118,51 @@ router.post('/:id/move', ensureUser, validateMoveTask, async (req: AuthedRequest
       });
     }
 
-    // Update the task status
-    const updated = await updateTask(taskId, { statusId });
-    if (!updated) return res.status(404).json({ error: 'Failed to update task' });
+    // Server-side parent/subtask validation: parent tasks cannot be moved to a status
+    // with higher order than any of their sub-tasks. Enforce this on the server so
+    // clients cannot bypass the UI checks.
+    if (!existing.parentId) {
+      // this is a parent task; fetch its sub-tasks
+      const subTasks = await prisma.task.findMany({ where: { parentId: taskId } });
+      if (subTasks.length > 0) {
+        // build a map of statusId -> order for this project
+        const statuses = await listStatusesByProject(existing.projectId);
+        const orderMap = new Map<string, number | null>();
+        for (const s of statuses) orderMap.set(s.id, s.order ?? null);
 
-    // Save comment if provided
-    if (comment && comment.trim() !== '') {
-      await createTaskComment(taskId, uid, comment.trim(), statusId);
+        const targetOrder = targetStatus.order ?? null;
+        const hasSubTaskWithLowerOrder = subTasks.some((subTask: any) => {
+          const so = orderMap.get((subTask as any).status) ?? null;
+          // if any subtask has an order lower (i.e. less numeric) than targetOrder,
+          // block the move. Treat null/undefined orders conservatively (allow move only
+          // if comparison is safe).
+          if (so === null || targetOrder === null) return false;
+          return so < targetOrder;
+        });
+
+        if (hasSubTaskWithLowerOrder) {
+          return res.status(400).json({ error: 'Cannot move parent task above sub-task status', statusName: targetStatus.label });
+        }
+      }
     }
+
+    // Perform the status update and optional comment creation atomically in a DB transaction
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const updatedTask = await tx.task.update({ where: { id: taskId }, data: { status: { connect: { id: statusId } } } });
+      if (comment && comment.trim() !== '') {
+        await tx.taskComment.create({
+          data: {
+            taskId,
+            authorId: uid,
+            content: comment.trim(),
+            statusId
+          }
+        });
+      }
+      return updatedTask;
+    });
+
+    if (!updated) return res.status(404).json({ error: 'Failed to update task' });
 
     // Broadcast task update to other clients
     realtimeService.broadcastTaskUpdate(updated, 'updated');
