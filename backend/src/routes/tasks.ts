@@ -164,6 +164,15 @@ router.post('/:id/move', ensureUser, validateMoveTask, async (req: AuthedRequest
 
     if (!updated) return res.status(404).json({ error: 'Failed to update task' });
 
+    // Development-only info log to trace successful moves during debugging
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        console.info(`[tasks] task ${taskId} moved to status ${statusId} by user ${uid}`);
+      } catch (e) {
+        // ignore logging failures
+      }
+    }
+
     // Broadcast task update to other clients
     realtimeService.broadcastTaskUpdate(updated, 'updated');
 

@@ -137,9 +137,9 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                 isRequired: !!targetStatus.requiresComment
             });
                         // Close any open modals (comments) and open the comment prompt through the registry
-                        try { console.debug('[TaskItem] shouldShowModal, targetStatus=', targetStatus, 'task=', task.id); } catch (e) {}
+                        // Opening comment modal for status change
                         if (modal) {
-                            try { console.debug('[TaskItem] closing other modals and showing CommentPromptModal via modal.showModal'); } catch (e) {}
+                            // show modal via registry
                             modal.closeAll();
                             // Capture values locally so the modal's onConfirm doesn't rely on
                             // pendingStatusChange state which may not be updated yet.
@@ -151,7 +151,7 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                                     isOpen={true}
                                     onClose={() => { /* modal will be closed by modalId injection */ }}
                                     onConfirm={async (comment: string) => {
-                                        try { console.debug('[TaskItem] inline onConfirm called, comment=', comment); } catch (e) {}
+                                        // inline handler captured values; call API
                                         try {
                                             await moveTaskToStatus(task.id, capturedNewStatus, comment || undefined);
                                             if (onStatusChange) {
@@ -177,7 +177,6 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                                 />
                             );
                         } else {
-                            try { console.debug('[TaskItem] modal registry not available, using fallback setCommentModalOpen'); } catch (e) {}
                             // fallback to old behavior
                             setCommentModalOpen(true);
                         }
@@ -194,7 +193,7 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
   }, [taskStatusOptions, onStatusChange, task, updateTask, isSubTask, subTasks, toast]);
 
   const handleCommentConfirm = async (comment: string) => {
-        try { console.debug('[TaskItem] handleCommentConfirm called, comment=', comment, 'pendingStatusChange=', pendingStatusChange); } catch (e) {}
+    // handle confirm from fallback modal
     if (pendingStatusChange) {
         try {
             // Use the new API endpoint that handles comment requirements
