@@ -132,11 +132,16 @@ router.post('/:id/move', ensureUser, validateMoveTask, async (req: AuthedRequest
 
         const targetOrder = targetStatus.order ?? null;
         const hasSubTaskWithLowerOrder = subTasks.some((subTask: any) => {
-          const so = orderMap.get((subTask as any).status) ?? null;
-          // if any subtask has an order lower (i.e. less numeric) than targetOrder,
-          // block the move. Treat null/undefined orders conservatively (allow move only
-          // if comparison is safe).
-          if (so === null || targetOrder === null) return false;
+          // Prisma Task records use `statusId` as the foreign key. Some code paths
+          // may also include a populated `status` object, but to be robust we
+          // prefer `statusId` when present.
+          const subStatusId = (subTask as any).statusId ?? (subTask as any).status;
+          const so = orderMap.get(subStatusId) ?? null;
+          // If we cannot determine either the subtask order or the target order,
+          // conservatively block the move so clients can't bypass UI constraints
+          // by omitting status metadata. This prevents accidentally promoting a
+          // parent above a subtask when we don't have reliable ordering info.
+          if (so === null || targetOrder === null) return true;
           return so < targetOrder;
         });
 

@@ -88,7 +88,7 @@ class BackendLogger {
 
   private formatForConsole(level: LogLevel, message: string, context?: LogContext): string {
     const timestamp = new Date().toISOString();
-    const mergedContext = { ...this.globalContext, ...this.parentContext, ...context };
+    const mergedContext = this.sanitizeContext({ ...this.globalContext, ...this.parentContext, ...context });
     
     let prefix = `[${level.toUpperCase()}] ${timestamp}`;
     
@@ -117,7 +117,7 @@ class BackendLogger {
 
   private createLogEntry(level: LogLevel, message: string, context?: LogContext, ...args: any[]): LogEntry {
     const timestamp = new Date().toISOString();
-    const mergedContext = { ...this.globalContext, ...this.parentContext, ...context };
+    const mergedContext = this.sanitizeContext({ ...this.globalContext, ...this.parentContext, ...context });
     
     const logEntry: LogEntry = {
       level,
@@ -152,9 +152,22 @@ class BackendLogger {
     if (!this.config.enableConsole) return;
 
     const formattedMessage = this.formatForConsole(entry.level, entry.message, entry.context);
-    
+
+    // If consumer requested JSON logs for console, print the raw entry as JSON
+    if (process.env.LOG_JSON === 'true') {
+      try {
+        // Print compact JSON to console
+        console.log(JSON.stringify(entry));
+      } catch (e) {
+        // fallback to human readable
+        console.log(formattedMessage, ...args);
+      }
+      return;
+    }
+
     switch (entry.level) {
       case 'debug':
+        console.debug(formattedMessage, ...args);
         break;
       case 'info':
         console.info(formattedMessage, ...args);
@@ -237,6 +250,20 @@ class BackendLogger {
     this.writeToFile(entry);
   }
 
+  // Redact potentially sensitive fields from context before persisting/printing
+  private sanitizeContext(ctx?: LogContext): LogContext {
+    if (!ctx) return {};
+    const redacted = { ...ctx } as LogContext;
+    const sensitiveKeys = ['password', 'pass', 'pwd', 'token', 'authorization', 'secret', 'apiKey', 'apikey', 'accessToken', 'refreshToken', 'newPassword'];
+    for (const k of Object.keys(redacted)) {
+      const lower = k.toLowerCase();
+      if (sensitiveKeys.includes(lower) || sensitiveKeys.some(s => lower.includes(s))) {
+        redacted[k] = '[REDACTED]';
+      }
+    }
+    return redacted;
+  }
+
   debug(message: string, context?: LogContext, ...args: any[]) {
     this.log('debug', message, context, ...args);
   }
@@ -288,12 +315,53 @@ class BackendLogger {
 }
 
 // Create singleton logger instance
-export const logger = new BackendLogger({
-  level: (process.env.LOG_LEVEL as LogLevel) || 'info',
-  enableConsole: process.env.LOG_CONSOLE !== 'false',
-  enableFileLogging: process.env.LOG_FILE !== 'false',
-  logDir: process.env.LOG_DIR || path.join(process.cwd(), 'logs'),
-});
+// Create singleton logger instance. Prefer pino when enabled/available for
+// production-grade structured logging; otherwise fall back to the built-in
+// BackendLogger implementation.
+let logger: any;
+const desiredLevel = (process.env.LOG_LEVEL as LogLevel) || 'info';
+const usePino = process.env.USE_PINO === 'true';
+if (usePino) {
+  try {
+    // Dynamically require pino so this file can still be imported when pino is
+    // not installed (e.g., in lightweight dev). If pino is present, create a
+    // thin wrapper that matches the shape used by the codebase.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const pino = require('pino');
+    const p = pino({ name: 'orcheplan-backend', level: desiredLevel });
+
+    const makeWrapper = (instance: any) => ({
+      debug: instance.debug.bind(instance),
+      info: instance.info.bind(instance),
+      warn: instance.warn.bind(instance),
+      error: instance.error.bind(instance),
+      setContext: (_ctx: LogContext) => makeWrapper(instance),
+      withContext: (ctx: LogContext) => makeWrapper(instance.child ? instance.child(ctx) : instance),
+      getRecentLogs: () => [],
+      clearLogs: () => {},
+      getStats: () => ({ totalLogs: 0, levelCounts: {}, config: {} }),
+    });
+
+    logger = makeWrapper(p);
+  } catch (e) {
+    // pino not available; fall back
+    logger = new BackendLogger({
+      level: desiredLevel,
+      enableConsole: process.env.LOG_CONSOLE !== 'false',
+      enableFileLogging: process.env.LOG_FILE !== 'false',
+      logDir: process.env.LOG_DIR || path.join(process.cwd(), 'logs'),
+    });
+  }
+} else {
+  logger = new BackendLogger({
+    level: desiredLevel,
+    enableConsole: process.env.LOG_CONSOLE !== 'false',
+    enableFileLogging: process.env.LOG_FILE !== 'false',
+    logDir: process.env.LOG_DIR || path.join(process.cwd(), 'logs'),
+  });
+}
+
+export { logger };
 
 // Helper function to generate correlation IDs
 export function generateCorrelationId(): string {

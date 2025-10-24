@@ -16,8 +16,7 @@ async function cleanupExpiredLocks() {
     
     process.exit(0);
   } catch (error) {
-    logger.error('Lockout cleanup failed', {}, error);
-    console.error('Lockout cleanup failed:', error);
+    logger.error('Lockout cleanup failed', {}, error instanceof Error ? error.message : error);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

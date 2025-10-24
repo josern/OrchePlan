@@ -43,6 +43,9 @@
     "joi": "^18.0.1",
     "jsonwebtoken": "^9.0.0"
   },
+  "optionalDependencies": {
+    "pino": "^8.14.0"
+  },
   "prisma": {
     "version": "6.17.1"
   },

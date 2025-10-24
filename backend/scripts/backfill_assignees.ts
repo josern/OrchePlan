@@ -21,6 +21,9 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import prisma from '../src/services/sqlClient';
+import { createComponentLogger } from '../src/utils/logger';
+
+const logger = createComponentLogger('BackfillAssignees');
 
 async function main() {
   const args = process.argv.slice(2);
@@ -34,19 +37,19 @@ async function main() {
     if (a === '--apply') apply = true;
   if (a === '--verbose') verbose = true;
     if (a === '--help' || a === '-h') {
-      console.log('Usage: ts-node scripts/backfill_assignees.ts --csv path/to/mapping.csv [--apply]');
+      logger.info('Usage: ts-node scripts/backfill_assignees.ts --csv path/to/mapping.csv [--apply] [--verbose]');
       process.exit(0);
     }
   }
 
   if (!csvPath) {
-    console.error('Error: --csv path required');
+    logger.error('Error: --csv path required');
     process.exit(2);
   }
 
   const absPath = path.isAbsolute(csvPath) ? csvPath : path.join(process.cwd(), csvPath);
   if (!fs.existsSync(absPath)) {
-    console.error('CSV file not found:', absPath);
+    logger.error('CSV file not found', { path: absPath });
     process.exit(2);
   }
 
@@ -63,7 +66,7 @@ async function main() {
     rows.push({ taskId, assigneeEmail });
   }
 
-  console.log(`Read ${rows.length} mappings from ${absPath}`);
+  logger.info(`Read ${rows.length} mappings from ${absPath}`);
   if (rows.length === 0) return process.exit(0);
 
   let updated = 0;
@@ -77,46 +80,42 @@ async function main() {
       const task = await prisma.task.findUnique({ where: { id: r.taskId } });
       if (!task) {
         skippedNoTask++;
-        console.warn(`Task not found: ${r.taskId}`);
+        logger.warn(`Task not found: ${r.taskId}`);
         continue;
       }
 
       if (task.assigneeId) {
         skippedHasAssignee++;
-        console.warn(`Task already has assigneeId, skipping: ${r.taskId} -> ${task.assigneeId}`);
+        logger.warn(`Task already has assigneeId, skipping: ${r.taskId} -> ${task.assigneeId}`);
         continue;
       }
 
       const user = await prisma.user.findUnique({ where: { email: r.assigneeEmail } });
       if (!user) {
         skippedNoUser++;
-        console.warn(`No user with email: ${r.assigneeEmail} (task ${r.taskId})`);
+        logger.warn(`No user with email: ${r.assigneeEmail} (task ${r.taskId})`);
         continue;
       }
 
       if (apply) {
         await prisma.task.update({ where: { id: r.taskId }, data: { assigneeId: user.id } });
-        if (verbose) console.log(`Updated task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
+        if (verbose) logger.info(`Updated task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
       } else {
-        if (verbose) console.log(`[dry-run] Would update task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
+        if (verbose) logger.info(`[dry-run] Would update task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
       }
       updated++;
     } catch (e: any) {
       errors.push({ row: r, error: e.message || String(e) });
     }
   }
-
-  console.log('--- Summary ---');
-  console.log('Total mappings:', rows.length);
-  console.log('Applied updates (or would apply):', updated);
-  console.log('Skipped - no task found:', skippedNoTask);
-  console.log('Skipped - already has assignee:', skippedHasAssignee);
-  console.log('Skipped - no matching user:', skippedNoUser);
+  logger.info('--- Summary ---');
+  logger.info('Total mappings:', { total: rows.length });
+  logger.info('Applied updates (or would apply):', { applied: updated });
+  logger.info('Skipped - no task found:', { skippedNoTask });
+  logger.info('Skipped - already has assignee:', { skippedHasAssignee });
+  logger.info('Skipped - no matching user:', { skippedNoUser });
   if (errors.length > 0) {
-    console.error('Errors:', errors.length);
-    for (const err of errors.slice(0,10)) {
-      console.error(err);
-    }
+    logger.error('Errors during backfill', { count: errors.length, errors: errors.slice(0, 10) });
   }
 
   // disconnect prisma
@@ -124,6 +123,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Fatal error during backfill:', err);
+  logger.error('Fatal error during backfill', {}, err instanceof Error ? err.message : err);
   process.exit(1);
 });
