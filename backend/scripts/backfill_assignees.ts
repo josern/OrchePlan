@@ -26,11 +26,13 @@ async function main() {
   const args = process.argv.slice(2);
   let csvPath = '';
   let apply = false;
+  let verbose = false;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--csv' && args[i+1]) { csvPath = args[i+1]; i++; }
     if (a === '--apply') apply = true;
+  if (a === '--verbose') verbose = true;
     if (a === '--help' || a === '-h') {
       console.log('Usage: ts-node scripts/backfill_assignees.ts --csv path/to/mapping.csv [--apply]');
       process.exit(0);
@@ -94,9 +96,9 @@ async function main() {
 
       if (apply) {
         await prisma.task.update({ where: { id: r.taskId }, data: { assigneeId: user.id } });
-        console.log(`Updated task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
+        if (verbose) console.log(`Updated task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
       } else {
-        console.log(`[dry-run] Would update task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
+        if (verbose) console.log(`[dry-run] Would update task ${r.taskId} -> assignee ${user.id} (${r.assigneeEmail})`);
       }
       updated++;
     } catch (e: any) {
