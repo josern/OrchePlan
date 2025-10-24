@@ -247,6 +247,32 @@ class RealtimeService {
       }, {} as Record<string, number>)
     };
   }
+
+  // Get a more detailed audit of connected clients
+  getAudit() {
+    const clientsList = Array.from(this.clients.values()).map(c => ({
+      id: c.id,
+      userId: c.userId,
+      projectIds: c.projectIds.slice()
+    }));
+
+    const clientsByProject = clientsList.reduce((acc: Record<string, number>, c) => {
+      c.projectIds.forEach(pid => {
+        acc[pid] = (acc[pid] || 0) + 1;
+      });
+      return acc;
+    }, {});
+
+    return {
+      totalClients: this.clients.size,
+      clientsByUser: clientsList.reduce((acc: Record<string, number>, c) => {
+        acc[c.userId] = (acc[c.userId] || 0) + 1;
+        return acc;
+      }, {}),
+      clientsByProject,
+      clients: clientsList
+    };
+  }
 }
 
 // Singleton instance

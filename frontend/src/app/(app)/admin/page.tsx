@@ -15,6 +15,7 @@ import {
   UserX, UserCheck, Settings, Trash2, MoreHorizontal, Download, Filter, X
 } from 'lucide-react';
 import { RoleGuard } from '@/components/role-guard';
+import { useIsSuperuser } from '@/components/role-guard';
 import {
   Dialog,
   DialogContent,
@@ -103,6 +104,7 @@ export default function AdminPage() {
 function AdminDashboard() {
   const { toast } = useToast();
   const { currentUser } = useApp();
+  const isSuperuser = useIsSuperuser();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -131,6 +133,7 @@ function AdminDashboard() {
   const [logComponents, setLogComponents] = useState<string[]>([]);
   const [filteredLogs, setFilteredLogs] = useState<LogEntry[]>([]);
   const [threatStats, setThreatStats] = useState<ThreatStats | null>(null);
+  const [realtimeAudit, setRealtimeAudit] = useState<any | null>(null);
 
   // Client-side mounting check
   useEffect(() => {
@@ -169,7 +172,8 @@ function AdminDashboard() {
         await Promise.all([
           fetchStats(),
           fetchLockedAccounts(),
-          fetchThreatStats()
+          fetchThreatStats(),
+          fetchRealtimeAudit()
         ]);
       } catch (error) {
         console.error('Error during authentication or data fetch:', error);
@@ -185,6 +189,16 @@ function AdminDashboard() {
     
     fetchInitialData();
   }, []);
+
+  const fetchRealtimeAudit = async () => {
+    try {
+      const data = await api.get('/realtime/audit');
+      setRealtimeAudit(data.audit || data);
+    } catch (error) {
+      console.error('Failed to fetch realtime audit:', error);
+      toast({ title: 'Error', description: 'Failed to fetch SSE audit', variant: 'destructive' });
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -526,11 +540,12 @@ function AdminDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="lockouts">Account Lockouts</TabsTrigger>
           <TabsTrigger value="security">Security & Threats</TabsTrigger>
+          {isSuperuser && <TabsTrigger value="sse">SSE Audit</TabsTrigger>}
           <TabsTrigger value="logs">System Logs</TabsTrigger>
         </TabsList>
 
@@ -546,6 +561,7 @@ function AdminDashboard() {
                   <div className="text-2xl font-bold">{stats.totalLocked}</div>
                 </CardContent>
               </Card>
+                {/* SSE Audit moved to its own tab for superusers */}
               
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -768,50 +784,35 @@ function AdminDashboard() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              onClick={() => openDisableDialog(user)}
-                              disabled={currentUser?.role === 'admin' && user.role === 'superuser'}
-                            >
-                              {user.isDisabled ? (
-                                <>
-                                  <UserCheck className="mr-2 h-4 w-4" />
-                                  Enable User
-                                  {currentUser?.role === 'admin' && user.role === 'superuser' && (
-                                    <span className="ml-auto text-xs text-muted-foreground">(Restricted)</span>
+                            {/* Hide actions that admins cannot perform on superuser accounts */}
+                            {!(currentUser?.role === 'admin' && user.role === 'superuser') && (
+                              <>
+                                <DropdownMenuItem onClick={() => openDisableDialog(user)}>
+                                  {user.isDisabled ? (
+                                    <>
+                                      <UserCheck className="mr-2 h-4 w-4" />
+                                      Enable User
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserX className="mr-2 h-4 w-4" />
+                                      Disable User
+                                    </>
                                   )}
-                                </>
-                              ) : (
-                                <>
-                                  <UserX className="mr-2 h-4 w-4" />
-                                  Disable User
-                                  {currentUser?.role === 'admin' && user.role === 'superuser' && (
-                                    <span className="ml-auto text-xs text-muted-foreground">(Restricted)</span>
-                                  )}
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => openRoleDialog(user)}
-                              disabled={currentUser?.role === 'admin' && user.role === 'superuser'}
-                            >
-                              <Settings className="mr-2 h-4 w-4" />
-                              Change Role
-                              {currentUser?.role === 'admin' && user.role === 'superuser' && (
-                                <span className="ml-auto text-xs text-muted-foreground">(Restricted)</span>
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              className="text-red-600"
-                              onClick={() => openDeleteDialog(user)}
-                              disabled={currentUser?.role === 'admin' && user.role === 'superuser'}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete User
-                              {currentUser?.role === 'admin' && user.role === 'superuser' && (
-                                <span className="ml-auto text-xs text-muted-foreground">(Restricted)</span>
-                              )}
-                            </DropdownMenuItem>
+                                </DropdownMenuItem>
+
+                                <DropdownMenuItem onClick={() => openRoleDialog(user)}>
+                                  <Settings className="mr-2 h-4 w-4" />
+                                  Change Role
+                                </DropdownMenuItem>
+
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-red-600" onClick={() => openDeleteDialog(user)}>
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete User
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -1116,6 +1117,156 @@ function AdminDashboard() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {isSuperuser && (
+          <TabsContent value="sse" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>SSE Audit</CardTitle>
+                <CardDescription>Connected SSE clients and subscription counts</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-4 flex items-center justify-end">
+                  <Button size="sm" onClick={async () => { await fetchRealtimeAudit(); toast({ title: 'Refreshed', description: 'SSE audit refreshed' }); }}>
+                    <Search className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+
+                {!realtimeAudit ? (
+                  <div className="text-sm text-muted-foreground">No SSE audit data available. Click Refresh.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm">Total Clients</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{realtimeAudit.totalClients ?? 0}</div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm">Clients by User</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-sm">{Object.keys(realtimeAudit.clientsByUser || {}).length} users</div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm">Clients by Project</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-sm">{Object.keys(realtimeAudit.clientsByProject || {}).length} projects</div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Top Projects</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="max-h-48 overflow-y-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Project ID</TableHead>
+                                  <TableHead>Client Count</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {Object.entries(realtimeAudit.clientsByProject || {}).sort((a: any, b: any) => (b[1] as number) - (a[1] as number)).slice(0,50).map(([pid, cnt]) => (
+                                  <TableRow key={pid}>
+                                    <TableCell>{pid}</TableCell>
+                                    <TableCell>{String(cnt)}</TableCell>
+                                  </TableRow>
+                                ))}
+                                {(!realtimeAudit.clientsByProject || Object.keys(realtimeAudit.clientsByProject).length === 0) && (
+                                  <TableRow>
+                                    <TableCell colSpan={2} className="text-center text-muted-foreground">No project subscriptions</TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Top Users</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="max-h-48 overflow-y-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>User ID</TableHead>
+                                  <TableHead>Client Count</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {Object.entries(realtimeAudit.clientsByUser || {}).sort((a: any, b: any) => (b[1] as number) - (a[1] as number)).slice(0,50).map(([uid, cnt]) => (
+                                  <TableRow key={uid}>
+                                    <TableCell>{uid}</TableCell>
+                                    <TableCell>{String(cnt)}</TableCell>
+                                  </TableRow>
+                                ))}
+                                {(!realtimeAudit.clientsByUser || Object.keys(realtimeAudit.clientsByUser).length === 0) && (
+                                  <TableRow>
+                                    <TableCell colSpan={2} className="text-center text-muted-foreground">No active users</TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Active Clients (sample)</CardTitle>
+                        <CardDescription>First 200 clients</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="max-h-64 overflow-y-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Client ID</TableHead>
+                                <TableHead>User</TableHead>
+                                <TableHead>Projects</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {(realtimeAudit.clients || []).slice(0,200).map((c: any) => (
+                                <TableRow key={c.id}>
+                                  <TableCell className="break-all">{c.id}</TableCell>
+                                  <TableCell className="break-all">{c.userId}</TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">{(c.projectIds || []).join(', ') || '—'}</TableCell>
+                                </TableRow>
+                              ))}
+                              {(!realtimeAudit.clients || realtimeAudit.clients.length === 0) && (
+                                <TableRow>
+                                  <TableCell colSpan={3} className="text-center text-muted-foreground">No active clients</TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* User Action Dialogs */}

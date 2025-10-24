@@ -1,5 +1,5 @@
 import express, { Router, Request, Response, NextFunction } from 'express';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requireSuperuser } from '../middleware/auth';
 import { realtimeService } from '../services/realtime';
 import { getProjectsForUser } from '../services/sqlClient';
 
@@ -53,6 +53,22 @@ router.get('/health', (req: Request, res: Response) => {
     endpoint: '/realtime/events',
     ...stats
   });
+});
+
+// Audit endpoint - returns detailed list of connected SSE clients and counts per project
+// Restricted to superusers only
+router.get('/audit', authMiddleware, requireSuperuser, (req: any, res: Response) => {
+  try {
+    const audit = realtimeService.getAudit();
+    return res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      audit
+    });
+  } catch (err) {
+    console.error('Failed to retrieve SSE audit', err);
+    return res.status(500).json({ error: 'failed to retrieve sse audit' });
+  }
 });
 
 // Simple test endpoint

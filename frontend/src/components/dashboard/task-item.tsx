@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useRef, useCallback } from 'react';
+import { useModal } from '@/context/modal-context';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -59,8 +60,11 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
     const { toast } = useToast();
     const [menuOpen, setMenuOpen] = useState(false);
     const [isAddSubTaskDialogOpen, setAddSubTaskDialogOpen] = useState(false);
-    const [commentModalOpen, setCommentModalOpen] = useState(false);
-    const [commentsModalOpen, setCommentsModalOpen] = useState(false);
+        const [commentModalOpen, setCommentModalOpen] = useState(false);
+        // modal registry
+        const modal = (() => {
+            try { return useModal(); } catch (e) { return null; }
+        })();
     const [pendingStatusChange, setPendingStatusChange] = useState<{
         newStatus: string;
         statusName: string;
@@ -125,17 +129,30 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
         const shouldShowModal = targetStatus.requiresComment || 
                               (targetStatus.allowsComment && !targetStatus.requiresComment);
         
-        if (shouldShowModal) {
+                if (shouldShowModal) {
             // Show comment modal
             setPendingStatusChange({
                 newStatus,
                 statusName: targetStatus.name,
                 isRequired: !!targetStatus.requiresComment
             });
-            // If the task comments drawer/modal is open, close it so the comment prompt
-            // appears as the primary modal (prevents overlay stacking issues on sub-tasks)
-            setCommentsModalOpen(false);
-            setCommentModalOpen(true);
+                        // Close any open modals (comments) and open the comment prompt through the registry
+                        if (modal) modal.closeAll();
+                        if (modal) {
+                            modal.showModal(
+                                <CommentPromptModal
+                                    isOpen={true}
+                                    onClose={() => { /* modal will be closed by modalId injection */ }}
+                                    onConfirm={handleCommentConfirm}
+                                    statusName={targetStatus.name}
+                                    taskTitle={task.title}
+                                    isRequired={!!targetStatus.requiresComment}
+                                />
+                            );
+                        } else {
+                            // fallback to old behavior
+                            setCommentModalOpen(true);
+                        }
             return; // Don't proceed with status change yet
         }
     }
@@ -224,7 +241,7 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); e.stopPropagation(); setCommentsModalOpen(true); setMenuOpen(false); }}>
+                                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); e.stopPropagation(); if (modal) modal.showModal(<TaskComments taskId={task.id} isOpen={true} />); else setCommentModalOpen(true); setMenuOpen(false); }}>
                                         <MessageCircle className="mr-2 h-4 w-4" />
                                         <span>Comments</span>
                                     </DropdownMenuItem>
@@ -299,23 +316,7 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                     />
                 </AddTaskDialog>
                 
-                {/* Task Comments Modal for Subtask */}
-                <TaskComments
-                  taskId={task.id}
-                  isOpen={commentsModalOpen}
-                  onClose={() => setCommentsModalOpen(false)}
-                />
-                                {/* Comment Prompt Modal for Subtask status changes */}
-                                {pendingStatusChange && (
-                                    <CommentPromptModal
-                                        isOpen={commentModalOpen}
-                                        onClose={handleCommentCancel}
-                                        onConfirm={handleCommentConfirm}
-                                        statusName={pendingStatusChange.statusName}
-                                        taskTitle={task.title}
-                                        isRequired={pendingStatusChange.isRequired}
-                                    />
-                                )}
+                                {/* Modals are opened via the global Modal registry (useModal) */}
         </>
         );
     }
@@ -341,13 +342,13 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                 )}
             </div>
             <div className="flex items-center">
-                <Button 
+                    <Button 
                     variant="ghost" 
                     size="icon" 
                     onClick={(e) => { 
                         e.preventDefault();
                         e.stopPropagation(); 
-                        setCommentsModalOpen(true); 
+                        if (modal) modal.showModal(<TaskComments taskId={task.id} isOpen={true} />); else setCommentModalOpen(true);
                     }}
                     className={`${isCompact ? 'h-5 w-5' : 'h-8 w-8'}`}
                     title="View comments"
@@ -390,7 +391,7 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); e.stopPropagation(); setCommentsModalOpen(true); setMenuOpen(false); }}>
+                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); e.stopPropagation(); if (modal) modal.showModal(<TaskComments taskId={task.id} isOpen={true} />); else setCommentModalOpen(true); setMenuOpen(false); }}>
                                 <MessageCircle className="mr-2 h-4 w-4" />
                                 <span>Comments</span>
                             </DropdownMenuItem>
@@ -475,24 +476,7 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
             />
         </AddTaskDialog>
         
-        {/* Comment Prompt Modal */}
-        {pendingStatusChange && (
-          <CommentPromptModal
-            isOpen={commentModalOpen}
-            onClose={handleCommentCancel}
-            onConfirm={handleCommentConfirm}
-            statusName={pendingStatusChange.statusName}
-            taskTitle={task.title}
-            isRequired={pendingStatusChange.isRequired}
-          />
-        )}
-        
-        {/* Task Comments Modal */}
-        <TaskComments
-          taskId={task.id}
-          isOpen={commentsModalOpen}
-          onClose={() => setCommentsModalOpen(false)}
-        />
+                {/* Modals are opened via the global Modal registry (useModal) */}
     </>
     );
 });

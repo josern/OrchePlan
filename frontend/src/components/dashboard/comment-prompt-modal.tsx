@@ -3,16 +3,19 @@
 import React, { useState, memo } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { useModal } from '@/context/modal-context';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 
 interface CommentPromptModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
   onConfirm: (comment: string) => void;
   statusName?: string;
   taskTitle?: string;
   isRequired: boolean;
+  // injected by ModalProvider when opened through the registry
+  modalId?: number;
 }
 
 const CommentPromptModal = memo<CommentPromptModalProps>(function CommentPromptModal({
@@ -21,9 +24,13 @@ const CommentPromptModal = memo<CommentPromptModalProps>(function CommentPromptM
   onConfirm,
   statusName = 'the selected status',
   taskTitle = 'this task',
-  isRequired
+  isRequired,
+  modalId
 }: CommentPromptModalProps) {
   const [comment, setComment] = useState('');
+  // modal registry (optional)
+  let modal = null;
+  try { modal = useModal(); } catch (e) { modal = null; }
 
   const handleConfirm = () => {
     if (isRequired && comment.trim() === '') {
@@ -31,11 +38,18 @@ const CommentPromptModal = memo<CommentPromptModalProps>(function CommentPromptM
     }
     onConfirm(comment.trim());
     setComment('');
+    if (modalId && modal) {
+      modal.closeModal(modalId);
+    }
   };
 
   const handleClose = () => {
     setComment('');
-    onClose();
+    if (modalId && modal) {
+      modal.closeModal(modalId);
+      return;
+    }
+    if (onClose) onClose();
   };
 
   return (

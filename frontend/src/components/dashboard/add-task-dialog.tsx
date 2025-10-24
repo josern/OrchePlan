@@ -29,6 +29,7 @@ import { useApp } from '../../context/app-context';
 import { findProjectById } from '../../lib/projects';
 import { moveTaskToStatus } from '../../lib/api';
 import CommentPromptModal from './comment-prompt-modal';
+import { useModal } from '@/context/modal-context';
 
 const taskFormSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters.'),
@@ -55,6 +56,8 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [pendingTaskData, setPendingTaskData] = useState<any>(null);
   const [isStatusChangeRequired, setIsStatusChangeRequired] = useState(false);
+  // modal registry (optional)
+  const modal = (() => { try { return useModal(); } catch (e) { return null; } })();
   
   const form = useForm<z.infer<typeof taskFormSchema>>({
     resolver: zodResolver(taskFormSchema),
@@ -230,7 +233,21 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
                 taskData,
               });
               setIsStatusChangeRequired(requiresComment || false);
-              setIsCommentModalOpen(true);
+              if (modal) {
+                modal.closeAll();
+                modal.showModal(
+                  <CommentPromptModal
+                    isOpen={true}
+                    onClose={() => { /* closed by modalId when available */ }}
+                    onConfirm={handleCommentConfirm}
+                    statusName={targetStatus.name}
+                    taskTitle={taskToEdit.title}
+                    isRequired={!!targetStatus.requiresComment}
+                  />
+                );
+              } else {
+                setIsCommentModalOpen(true);
+              }
               return; // Don't proceed immediately
             }
           }

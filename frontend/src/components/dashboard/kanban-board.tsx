@@ -11,6 +11,7 @@ import { DndContext, closestCenter, DragEndEvent, useDroppable, UniqueIdentifier
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useApp } from '@/context/app-context';
+import { useModal } from '@/context/modal-context';
 import { moveTaskToStatus } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { sortByPriorityThen } from '@/lib/priority-utils';
@@ -148,6 +149,8 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
   } | null>(null);
   const { projects, currentUser } = useApp();
   const { toast } = useToast();
+    // modal registry (optional)
+    const modal = (() => { try { return useModal(); } catch (e) { return null; } })();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -259,7 +262,21 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
                         taskTitle: task.title,
                         isRequired: !!targetStatus.requiresComment
                     });
-                    setCommentModalOpen(true);
+                    if (modal) {
+                        modal.closeAll();
+                        modal.showModal(
+                          <CommentPromptModal
+                            isOpen={true}
+                            onClose={() => { /* closed by modalId when available */ }}
+                            onConfirm={handleCommentConfirm}
+                            statusName={targetStatus.name}
+                            taskTitle={task.title}
+                            isRequired={!!targetStatus.requiresComment}
+                          />
+                        );
+                    } else {
+                        setCommentModalOpen(true);
+                    }
                 } else {
                     // Move directly without comment (disabled or default)
                     onStatusChange(taskId, newStatusId as TaskStatus);

@@ -1,6 +1,7 @@
  'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef, useMemo } from 'react';
+import ModalProvider from './modal-context';
 import { createProject, updateProjectApi, deleteProjectApi, createTaskApi, updateTaskApi, deleteTaskApi, getProject as apiGetProject, getProjects, getUsers, getTasksByProjectIds, authLogin, authSignup, authLogout, authMe, authChangePassword, getProjectStatuses, createProjectStatus, updateProjectStatus, deleteProjectStatus, updateProjectStatusesOrder, updateUserApi, addProjectMember, updateProjectMemberRole, removeProjectMember } from '@/lib/api';
 import { User, Project, Task, TaskStatusOption, ProjectRole } from '@/lib/types';
 import { useRouter, usePathname } from 'next/navigation';
@@ -1629,9 +1630,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ]);
 
   return (
-    <AppContext.Provider value={contextValue}>
-      {children}
-    </AppContext.Provider>
+        <AppContext.Provider value={contextValue}>
+            <ModalProvider>
+                {children}
+            </ModalProvider>
+        </AppContext.Provider>
   );
 }
 

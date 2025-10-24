@@ -7,6 +7,7 @@ import { MessageCircle, Edit2, Trash2, Send, X } from 'lucide-react';
 import { getTaskComments, createTaskComment, updateTaskComment, deleteTaskComment } from '@/lib/api';
 import { TaskComment } from '@/lib/types';
 import { useApp } from '@/context/app-context';
+import { useModal } from '@/context/modal-context';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
@@ -14,10 +15,15 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 interface TaskCommentsProps {
   taskId: string;
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
+  // injected by ModalProvider when opened through the modal registry
+  modalId?: number;
 }
 
-export function TaskComments({ taskId, isOpen, onClose }: TaskCommentsProps) {
+export function TaskComments({ taskId, isOpen, onClose, modalId }: TaskCommentsProps) {
+  const modal = (() => {
+    try { return useModal(); } catch (e) { return null; }
+  })();
   const { currentUser } = useApp();
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -134,9 +140,16 @@ export function TaskComments({ taskId, isOpen, onClose }: TaskCommentsProps) {
     return 'Just now';
   };
 
+  if (!isOpen) return null;
+
   // Render TaskComments as a Dialog so it's portalled and correctly stacked above the app
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        if (modalId && modal) modal.closeModal(modalId);
+        else if (onClose) onClose();
+      }
+    }}>
       <DialogContent className="sm:max-w-4xl border-0 p-0 bg-transparent shadow-none">
         {/* Accessible title for screen readers — visually hidden to avoid duplicate visible headings */}
         <DialogTitle>
