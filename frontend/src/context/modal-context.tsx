@@ -1,7 +1,6 @@
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 
 type ModalEntry = {
   id: number;
@@ -36,16 +35,20 @@ export function ModalProvider({ children }: { children: ReactNode }) {
   return (
     <ModalContext.Provider value={{ showModal, closeModal, closeAll }}>
       {children}
-      {typeof window !== 'undefined' && createPortal(
-        <div id="__modal_root" aria-live="polite">
-          {modals.map(m => (
-            React.isValidElement(m.node)
-              ? React.cloneElement(m.node as React.ReactElement, { modalId: m.id, key: m.id })
-              : <React.Fragment key={m.id}>{m.node}</React.Fragment>
-          ))}
-        </div>,
-        document.body
-      )}
+      {/*
+        Render a stable modal root in the React tree so server and client markup
+        match exactly. Using createPortal only on the client can lead to
+        hydration mismatches because the server omits the element entirely.
+        Rendering the container unconditionally keeps SSR consistent; the
+        actual modal children are mounted into this container.
+      */}
+      <div id="__modal_root" aria-live="polite">
+        {modals.map(m => (
+          React.isValidElement(m.node)
+            ? React.cloneElement(m.node as React.ReactElement, { modalId: m.id, key: m.id })
+            : <React.Fragment key={m.id}>{m.node}</React.Fragment>
+        ))}
+      </div>
     </ModalContext.Provider>
   );
 }
