@@ -16,6 +16,7 @@ import AddSubTaskDialog from './add-sub-task-dialog';
 import CommentPromptModal from './comment-prompt-modal';
 import { TaskComments } from '@/components/task/task-comments';
 import { moveTaskToStatus } from '@/lib/api';
+import { getCommentRequirement } from '@/lib/comment-utils';
 import { useToast } from '@/hooks/use-toast';
 import {
   Tooltip,
@@ -125,17 +126,15 @@ const TaskItem = React.memo<TaskItemProps>(function TaskItem({ task, onDelete, o
             }
         }
         
-        // Check comment requirements: Required OR Optional (but not Disabled)
-        const shouldShowModal = targetStatus.requiresComment || 
-                              (targetStatus.allowsComment && !targetStatus.requiresComment);
+        const requirement = getCommentRequirement(newStatus as string, taskStatusOptions);
         
-                if (shouldShowModal) {
-            // Show comment modal
-            setPendingStatusChange({
-                newStatus,
-                statusName: targetStatus.name,
-                isRequired: !!targetStatus.requiresComment
-            });
+            if (requirement.shouldShowModal) {
+                // Show comment modal
+                setPendingStatusChange({
+                    newStatus,
+                    statusName: requirement.statusName || targetStatus.name,
+                    isRequired: !!requirement.isRequired
+                });
                         // Close any open modals (comments) and open the comment prompt through the registry
                         // Opening comment modal for status change
                         if (modal) {

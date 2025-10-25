@@ -29,6 +29,7 @@ import { useApp } from '../../context/app-context';
 import { findProjectById } from '../../lib/projects';
 import { moveTaskToStatus } from '../../lib/api';
 import CommentPromptModal from './comment-prompt-modal';
+import { getCommentRequirement } from '../../lib/comment-utils';
 import { useModal } from '@/context/modal-context';
 
 const taskFormSchema = z.object({
@@ -222,17 +223,16 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
           const targetStatus = targetProject.taskStatusOptions.find(s => s.id === values.status);
           
           if (targetStatus) {
-            const requiresComment = targetStatus.requiresComment;
-            const allowsComment = targetStatus.allowsComment;
-            
-            if (requiresComment || allowsComment) {
+            const { shouldShowModal, isRequired, statusName } = await import('../../lib/comment-utils').then(m => m.getCommentRequirement(values.status, targetProject.taskStatusOptions));
+
+            if (shouldShowModal) {
               // Show comment modal
               setPendingTaskData({
                 isEdit: true,
                 originalTask: taskToEdit,
                 taskData,
               });
-              setIsStatusChangeRequired(requiresComment || false);
+              setIsStatusChangeRequired(isRequired || false);
               // status change requires comment: show prompt
               if (modal) {
                 modal.closeAll();
@@ -241,9 +241,9 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
                     isOpen={true}
                     onClose={() => { /* closed by modalId when available */ }}
                     onConfirm={handleCommentConfirm}
-                    statusName={targetStatus.name}
+                    statusName={statusName || targetStatus.name}
                     taskTitle={taskToEdit.title}
-                    isRequired={!!targetStatus.requiresComment}
+                    isRequired={!!isRequired}
                   />
                 );
               } else {

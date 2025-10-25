@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import TaskItem from './task-item';
 import CommentPromptModal from './comment-prompt-modal';
+import { getCommentRequirement } from '@/lib/comment-utils';
 import { ComponentErrorBoundary } from '@/components/error-boundary';
 import { DndContext, closestCenter, DragEndEvent, useDroppable, UniqueIdentifier, DragStartEvent, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -249,18 +250,17 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
                     }
                 }
                 
-                // Check comment requirements: Required OR Optional (but not Disabled)
-                const shouldShowModal = targetStatus.requiresComment || 
-                                      (targetStatus.allowsComment && !targetStatus.requiresComment);
-                
-                if (shouldShowModal) {
+        // Determine whether a comment modal should be shown for this status
+        // change using the centralized helper.
+        const requirement = getCommentRequirement(newStatusId, taskStatusOptions);
+        if (requirement.shouldShowModal) {
                     // Show comment modal
                     setPendingMove({
                         taskId,
                         newStatusId,
-                        statusName: targetStatus.name,
-                        taskTitle: task.title,
-                        isRequired: !!targetStatus.requiresComment
+            statusName: requirement.statusName || targetStatus.name,
+            taskTitle: task.title,
+            isRequired: !!requirement.isRequired
                     });
                     // should show comment modal for this drag move
                     if (modal) {

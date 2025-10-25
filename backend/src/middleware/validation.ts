@@ -348,11 +348,17 @@ export const sanitizeInput = (req: Request, res: Response, next: NextFunction) =
         .trim();
     }
     if (typeof value === 'object' && value !== null) {
-      const sanitizedObj: any = {};
-      for (const [key, val] of Object.entries(value)) {
-        sanitizedObj[key] = sanitizeValue(val);
-      }
-      return sanitizedObj;
+        // Preserve arrays as arrays (sanitize each element). Previously this
+        // converted arrays into plain objects with numeric keys which broke
+        // downstream Array.isArray checks (e.g. PATCH /statuses/order).
+        if (Array.isArray(value)) {
+          return value.map(v => sanitizeValue(v));
+        }
+        const sanitizedObj: any = {};
+        for (const [key, val] of Object.entries(value)) {
+          sanitizedObj[key] = sanitizeValue(val);
+        }
+        return sanitizedObj;
     }
     return value;
   };

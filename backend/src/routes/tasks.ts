@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthedRequest, getReqUserId, ensureUser } from '../middleware/auth';
 import { createTask, getTasksByProject, updateTask, deleteTask, isProjectEditorOrOwner, getProjectById, getTaskById, getProjectsForUser, getStatusById, listStatusesByProject, createTaskComment, getTaskComments, updateTaskComment, deleteTaskComment, findUserByEmail } from '../services/sqlClient';
+import { createComponentLogger } from '../utils/logger';
 import { realtimeService } from '../services/realtime';
 import { sanitizeInput } from '../middleware/validation';
 import { validateCreateTask, validateUpdateTask, validateDeleteTask, validateMoveTask, validatePagination } from '../middleware/validationSchemas';
@@ -65,6 +66,16 @@ router.post('/', ensureUser, validateCreateTask, async (req: AuthedRequest, res:
     
     const task = await createTask({ title, description, priority, projectId, assigneeId, statusId, parentId });
     
+    // Debug: log the created task payload so we can compare what the server
+    // returns to what is broadcast over SSE. This helps identify cases where
+    // the server later broadcasts an unexpected parent update.
+    try {
+      const logger = createComponentLogger('routes/tasks:post');
+      logger.debug('Task created via API', { taskId: task?.id, projectId: task?.projectId, parentId: task?.parentId, statusId: task?.statusId, task });
+    } catch (e) {
+      // ignore logging failures
+    }
+
     // Broadcast task creation to other clients
     realtimeService.broadcastTaskUpdate(task, 'created');
     
@@ -380,13 +391,10 @@ router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response
     }
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
-      if (process.env.NODE_ENV !== 'production') {
-        try {
-          // eslint-disable-next-line no-console
-          console.debug('bulk-import received invalid tasks payload. typeof(req.body)=', typeof req.body, 'bodyKeys=', Object.keys(req.body || {}), 'tasksType=', typeof tasks, 'tasksPreview=', JSON.stringify(Array.isArray(tasks) ? (tasks as any[]).slice(0,5) : tasks).slice(0,1000));
-        } catch (e) {
-          // ignore
-        }
+      try {
+        createComponentLogger('routes/tasks:bulk-import').debug('bulk-import received invalid tasks payload', { typeofBody: typeof req.body, bodyKeys: Object.keys(req.body || {}), tasksType: typeof tasks, tasksPreview: Array.isArray(tasks) ? (tasks as any[]).slice(0,5) : tasks });
+      } catch (e) {
+        // ignore logging failures
       }
       return res.status(400).json({ error: 'Tasks array is required' });
     }

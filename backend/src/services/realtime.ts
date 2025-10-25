@@ -172,6 +172,18 @@ class RealtimeService {
       timestamp: new Date().toISOString()
     };
 
+    // Debug: log the event being broadcast along with a short stack trace so
+    // we can trace which server code path triggered the broadcast (helpful
+    // when a parent unexpectedly receives an update after a child is created).
+    try {
+      logger.debug('Broadcasting task_update', { action, taskId: task?.id, projectId: task?.projectId, event });
+      // attach a minimal stack (first few lines) to help locate the caller
+      const stack = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
+      logger.debug('Broadcast stack', { stack });
+    } catch (e) {
+      // ignore logging failures
+    }
+
     this.broadcastToProject(task.projectId, event);
   }
 

@@ -322,36 +322,54 @@ let logger: any;
 const desiredLevel = (process.env.LOG_LEVEL as LogLevel) || 'info';
 const usePino = process.env.USE_PINO === 'true';
 if (usePino) {
-  try {
-    // Dynamically require pino so this file can still be imported when pino is
-    // not installed (e.g., in lightweight dev). If pino is present, create a
-    // thin wrapper that matches the shape used by the codebase.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const pino = require('pino');
-    const p = pino({ name: 'orcheplan-backend', level: desiredLevel });
+    try {
+      // Dynamically require pino so this file can still be imported when pino is
+      // not installed (e.g., in lightweight dev). If pino is present, create a
+      // thin wrapper that matches the shape used by the codebase.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pino = require('pino');
 
-    const makeWrapper = (instance: any) => ({
-      debug: instance.debug.bind(instance),
-      info: instance.info.bind(instance),
-      warn: instance.warn.bind(instance),
-      error: instance.error.bind(instance),
-      setContext: (_ctx: LogContext) => makeWrapper(instance),
-      withContext: (ctx: LogContext) => makeWrapper(instance.child ? instance.child(ctx) : instance),
-      getRecentLogs: () => [],
-      clearLogs: () => {},
-      getStats: () => ({ totalLogs: 0, levelCounts: {}, config: {} }),
-    });
+      // If file logging is enabled, create a pino destination to a daily log
+      // file so logs are persisted to disk similar to the old BackendLogger.
+      let p: any;
+      try {
+        const enableFile = process.env.LOG_FILE !== 'false';
+        if (enableFile) {
+          const logDir = process.env.LOG_DIR || path.join(process.cwd(), 'logs');
+          try { fs.mkdirSync(logDir, { recursive: true }); } catch (e) {}
+          const filePath = path.join(logDir, `pino-${new Date().toISOString().split('T')[0]}.log`);
+          const dest = pino.destination(filePath);
+          p = pino({ name: 'orcheplan-backend', level: desiredLevel }, dest);
+        } else {
+          p = pino({ name: 'orcheplan-backend', level: desiredLevel });
+        }
+      } catch (e) {
+        // If destination creation failed, fall back to stdout pino instance
+        p = pino({ name: 'orcheplan-backend', level: desiredLevel });
+      }
 
-    logger = makeWrapper(p);
-  } catch (e) {
-    // pino not available; fall back
-    logger = new BackendLogger({
-      level: desiredLevel,
-      enableConsole: process.env.LOG_CONSOLE !== 'false',
-      enableFileLogging: process.env.LOG_FILE !== 'false',
-      logDir: process.env.LOG_DIR || path.join(process.cwd(), 'logs'),
-    });
-  }
+      const makeWrapper = (instance: any) => ({
+        debug: instance.debug.bind(instance),
+        info: instance.info.bind(instance),
+        warn: instance.warn.bind(instance),
+        error: instance.error.bind(instance),
+        setContext: (_ctx: LogContext) => makeWrapper(instance),
+        withContext: (ctx: LogContext) => makeWrapper(instance.child ? instance.child(ctx) : instance),
+        getRecentLogs: () => [],
+        clearLogs: () => {},
+        getStats: () => ({ totalLogs: 0, levelCounts: {}, config: {} }),
+      });
+
+      logger = makeWrapper(p);
+    } catch (e) {
+      // pino not available; fall back
+      logger = new BackendLogger({
+        level: desiredLevel,
+        enableConsole: process.env.LOG_CONSOLE !== 'false',
+        enableFileLogging: process.env.LOG_FILE !== 'false',
+        logDir: process.env.LOG_DIR || path.join(process.cwd(), 'logs'),
+      });
+    }
 } else {
   logger = new BackendLogger({
     level: desiredLevel,

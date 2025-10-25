@@ -8,17 +8,18 @@ import { useRouter, usePathname } from 'next/navigation';
 import RealtimeClient from '../lib/realtime';
 import { createComponentLogger } from '@/lib/logger';
 import { 
-  getCachedProjects, 
-  getCachedUsers, 
-  getCachedTasksByProjectIds,
-  invalidateProjectCaches,
-  invalidateTaskCaches,
-  invalidateAllProjectCaches,
-  optimisticUpdateTask,
-  optimisticUpdateProject,
-  clearAllCaches,
-  prefetchProjectData,
-  getCacheStats,
+    getCachedProjects, 
+    getCachedUsers, 
+    getCachedTasksByProjectIds,
+    getCachedProjectStatuses,
+    invalidateProjectCaches,
+    invalidateTaskCaches,
+    invalidateAllProjectCaches,
+    optimisticUpdateTask,
+    optimisticUpdateProject,
+    clearAllCaches,
+    prefetchProjectData,
+    getCacheStats,
 } from '@/lib/cached-api';
 
 interface AppContextType {
@@ -406,7 +407,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
             );
             const combined: any[] = results.flat();
             const normalizedTasks = combined.map(normalizeTask);
-            setTasks(normalizedTasks);
+
+            // Attempt to fetch the project's status order map so we can make an
+            // informed decision when merging statuses. If we cannot get statuses,
+            // fall back to the safer merge that preserves non-null local status.
+            let orderMap: Map<string, number | null> | null = null;
+            try {
+                const statuses = await getCachedProjectStatuses(activeProjectId!);
+                orderMap = new Map<string, number | null>();
+                statuses.forEach((s: any) => orderMap!.set(s.id, typeof s.order === 'number' ? s.order : null));
+            } catch (e) {
+                // ignore - we'll use conservative merge below
+                orderMap = null;
+            }
+
+            setTasks(prev => {
+                const prevMap = new Map(prev.map(t => [t.id, t]));
+                const merged = normalizedTasks.map(t => {
+                    const existing = prevMap.get(t.id);
+                    if (!existing) return t;
+
+                    // Decide which status to keep. If we have an orderMap we will
+                    // prefer the status with the higher order value (later in workflow).
+                    const incomingStatus = t.status;
+                    const existingStatus = existing.status;
+
+                    let chosenStatus = incomingStatus;
+                    if ((incomingStatus === null || incomingStatus === undefined) && existingStatus) {
+                        chosenStatus = existingStatus; // preserve local non-null status
+                    } else if (incomingStatus && existingStatus && orderMap) {
+                        const inOrder = orderMap.get(incomingStatus) ?? null;
+                        const exOrder = orderMap.get(existingStatus) ?? null;
+                        // If either order is unknown, be conservative and keep existing
+                        if (inOrder === null || exOrder === null) {
+                            chosenStatus = existingStatus;
+                        } else {
+                            // prefer the later/higher order (greater number)
+                            chosenStatus = inOrder >= exOrder ? incomingStatus : existingStatus;
+                        }
+                    }
+
+                    return { ...existing, ...t, status: chosenStatus };
+                });
+
+                // Preserve any optimistic/local-only tasks not returned by the server
+                const mergedIds = new Set(merged.map(m => m.id));
+                const extras = prev.filter(p => !mergedIds.has(p.id));
+                return [...merged, ...extras];
+            });
+
             return normalizedTasks;
         } catch (err: any) {
             console.error('Error fetching tasks:', err);
@@ -531,33 +580,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
 
         // Set up event listeners for real-time updates
-        realtimeClient.current.on('task_update', (data: any) => {
+        realtimeClient.current.on('task_update', async (data: any) => {
             const { action, data: taskData } = data;
+            // Controlled debug: use component logger so environment rules apply
+            try {
+                logger.debug('[SSE] task_update received', { action, taskId: taskData?.id, projectId: taskData?.projectId, taskData });
+            } catch (e) {
+                // best-effort logging; ignore errors here
+            }
             const normalizedTask = normalizeTask(taskData);
 
             // Only process task updates for the active project to avoid unnecessary work
             if (!activeProjectId || normalizedTask.projectId !== activeProjectId) return;
 
-            setTasks(prev => {
-                switch (action) {
-                    case 'created':
-                        // Add new task if not already present (check by ID)
-                        const existingTask = prev.find(t => t.id === normalizedTask.id);
-                        if (!existingTask) {
-                            return [...prev, normalizedTask];
-                        } else {
-                            return prev;
-                        }
-                    case 'updated':
-                        // Update existing task
-                        return prev.map(t => t.id === normalizedTask.id ? normalizedTask : t);
-                    case 'deleted':
-                        // Remove deleted task
-                        return prev.filter(t => t.id !== normalizedTask.id);
-                    default:
-                        return prev;
+            if (action === 'created') {
+                setTasks(prev => {
+                    if (prev.find(t => t.id === normalizedTask.id)) return prev;
+                    return [...prev, normalizedTask];
+                });
+                logger.debug('[SSE] created -> appended', { id: normalizedTask.id });
+                return;
+            }
+
+            if (action === 'deleted') {
+                setTasks(prev => prev.filter(t => t.id !== normalizedTask.id));
+                return;
+            }
+
+            if (action === 'updated') {
+                // Try to fetch project statuses to decide merges by order where possible
+                let orderMap: Map<string, number | null> | null = null;
+                try {
+                    const statuses = await getCachedProjectStatuses(normalizedTask.projectId);
+                    orderMap = new Map<string, number | null>();
+                    statuses.forEach((s: any) => orderMap!.set(s.id, typeof s.order === 'number' ? s.order : null));
+                } catch (e) {
+                    orderMap = null;
                 }
-            });
+
+                setTasks(prev => prev.map(existing => {
+                    if (existing.id !== normalizedTask.id) return existing;
+
+                    const incomingStatus = normalizedTask.status;
+                    const existingStatus = existing.status;
+
+                    let chosenStatus = incomingStatus;
+                    if ((incomingStatus === null || incomingStatus === undefined) && existingStatus) {
+                        chosenStatus = existingStatus;
+                    } else if (incomingStatus && existingStatus && orderMap) {
+                        const inOrder = orderMap.get(incomingStatus) ?? null;
+                        const exOrder = orderMap.get(existingStatus) ?? null;
+                        if (inOrder === null || exOrder === null) {
+                            chosenStatus = existingStatus;
+                        } else {
+                            chosenStatus = inOrder >= exOrder ? incomingStatus : existingStatus;
+                        }
+                    }
+
+                    const merged = { ...existing, ...normalizedTask, status: chosenStatus };
+                    try {
+                        logger.debug('[SSE] updated merge', { id: existing.id, before: existing, incoming: normalizedTask, merged });
+                    } catch (e) {
+                        // ignore logging errors
+                    }
+                    return merged;
+                }));
+            }
         });
 
         realtimeClient.current.on('project_update', (data: any) => {
@@ -1556,6 +1644,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
             // Call API to update order
             const payload = statuses.map(s => ({ id: s.id, order: s.order }));
+
+            // Defensive validation: ensure payload is a non-empty array of ids
+            if (!Array.isArray(payload) || payload.length === 0) {
+                console.warn('[updateProjectTaskStatusOrder] empty payload, skipping API call', { projectId, payload });
+                return;
+            }
+            // ensure all entries look valid
+            const invalid = payload.find(p => !p || !p.id || typeof p.order !== 'number');
+            if (invalid) {
+                console.error('[updateProjectTaskStatusOrder] invalid payload entry, skipping API call', { projectId, payload });
+                throw new Error('Invalid statuses payload for updateProjectTaskStatusOrder');
+            }
+
+            // Log minimal payload using centralized logger (logger will respect env)
+            logger.debug('[updateProjectTaskStatusOrder] calling API', { projectId, payload });
+
             await updateProjectStatusesOrder(projectId, payload);
         } catch (error) {
             console.error('Error updating project task status order:', error);
