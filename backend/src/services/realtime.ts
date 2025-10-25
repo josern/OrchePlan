@@ -14,7 +14,7 @@ class RealtimeService {
   private clients: Map<string, Client> = new Map();
 
   // Add a client connection
-  addClient(clientId: string, userId: string, res: Response, projectIds: string[]) {
+  addClient(clientId: string, userId: string, res: Response, projectIds: string[] = []) {
     logger.info('Setting up SSE client connection', {
       clientId,
       userId,
@@ -35,7 +35,7 @@ class RealtimeService {
     });
 
     // Store client info
-    this.clients.set(clientId, { id: clientId, userId, res, projectIds });
+  this.clients.set(clientId, { id: clientId, userId, res, projectIds });
     
     // Send initial connection confirmation
     const welcomeMessage = JSON.stringify({ 
@@ -93,6 +93,62 @@ class RealtimeService {
     });
   }
 
+  // Return the userId for a given clientId (or null if not found)
+  getClientUserId(clientId: string): string | null {
+    const client = this.clients.get(clientId);
+    return client ? client.userId : null;
+  }
+
+  // Subscribe a connected client to a project
+  subscribeClientToProject(clientId: string, projectId: string) {
+    const client = this.clients.get(clientId);
+    if (!client) return false;
+    if (!client.projectIds.includes(projectId)) {
+      client.projectIds.push(projectId);
+    }
+    // Notify client about subscription change
+    try {
+      const event = {
+        type: 'subscription_update',
+        action: 'subscribed',
+        projectId,
+        projects: client.projectIds,
+        timestamp: new Date().toISOString()
+      };
+      client.res.write(`data: ${JSON.stringify(event)}\n\n`);
+    } catch (err) {
+      logger.warn('Failed to send subscription update to client', { clientId, projectId }, err);
+    }
+    return true;
+  }
+
+  // Unsubscribe a connected client from a project
+  unsubscribeClientFromProject(clientId: string, projectId: string) {
+    const client = this.clients.get(clientId);
+    if (!client) return false;
+    client.projectIds = client.projectIds.filter(id => id !== projectId);
+    // Notify client about unsubscription
+    try {
+      const event = {
+        type: 'subscription_update',
+        action: 'unsubscribed',
+        projectId,
+        projects: client.projectIds,
+        timestamp: new Date().toISOString()
+      };
+      client.res.write(`data: ${JSON.stringify(event)}\n\n`);
+    } catch (err) {
+      logger.warn('Failed to send unsubscription update to client', { clientId, projectId }, err);
+    }
+    return true;
+  }
+
+  // Return subscriptions (projectIds) for a client
+  getClientSubscriptions(clientId: string): string[] | null {
+    const client = this.clients.get(clientId);
+    return client ? client.projectIds.slice() : null;
+  }
+
   // Remove a client connection
   removeClient(clientId: string) {
     const client = this.clients.get(clientId);
@@ -115,6 +171,18 @@ class RealtimeService {
       data: task,
       timestamp: new Date().toISOString()
     };
+
+    // Debug: log the event being broadcast along with a short stack trace so
+    // we can trace which server code path triggered the broadcast (helpful
+    // when a parent unexpectedly receives an update after a child is created).
+    try {
+      logger.debug('Broadcasting task_update', { action, taskId: task?.id, projectId: task?.projectId, event });
+      // attach a minimal stack (first few lines) to help locate the caller
+      const stack = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
+      logger.debug('Broadcast stack', { stack });
+    } catch (e) {
+      // ignore logging failures
+    }
 
     this.broadcastToProject(task.projectId, event);
   }
@@ -189,6 +257,32 @@ class RealtimeService {
         acc[client.userId] = (acc[client.userId] || 0) + 1;
         return acc;
       }, {} as Record<string, number>)
+    };
+  }
+
+  // Get a more detailed audit of connected clients
+  getAudit() {
+    const clientsList = Array.from(this.clients.values()).map(c => ({
+      id: c.id,
+      userId: c.userId,
+      projectIds: c.projectIds.slice()
+    }));
+
+    const clientsByProject = clientsList.reduce((acc: Record<string, number>, c) => {
+      c.projectIds.forEach(pid => {
+        acc[pid] = (acc[pid] || 0) + 1;
+      });
+      return acc;
+    }, {});
+
+    return {
+      totalClients: this.clients.size,
+      clientsByUser: clientsList.reduce((acc: Record<string, number>, c) => {
+        acc[c.userId] = (acc[c.userId] || 0) + 1;
+        return acc;
+      }, {}),
+      clientsByProject,
+      clients: clientsList
     };
   }
 }

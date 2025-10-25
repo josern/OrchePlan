@@ -10,6 +10,8 @@ class RealtimeClient {
   private isConnected = false;
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private connectionFailed = false;
+  private clientId: string | null = null;
+  private pendingSubscriptions: Set<string> = new Set();
 
   constructor(private baseUrl: string) {}
 
@@ -305,7 +307,24 @@ class RealtimeClient {
   private handleMessage(data: any) {
     switch (data.type) {
       case 'connected':
-        break;
+        // capture assigned clientId from server welcome message
+        try {
+          if (data.clientId) {
+            this.clientId = data.clientId;
+            // flush any pending subscriptions
+            if (this.pendingSubscriptions.size > 0) {
+              this.pendingSubscriptions.forEach(pid => {
+                // fire and forget
+                this.subscribe(pid).catch(() => {});
+              });
+              this.pendingSubscriptions.clear();
+            }
+          }
+        } catch (e) {
+          this.logger.debug('Failed to process connected payload', {}, e);
+        }
+  this.emit('connected', data);
+  break;
       case 'heartbeat':
         // Silent heartbeat to keep connection alive
         break;
@@ -349,6 +368,61 @@ class RealtimeClient {
           this.logger.error('Error in event listener', { event }, error);
         }
       });
+    }
+  }
+
+  // Subscribe to a project channel - tells backend to add this client to project listeners
+  async subscribe(projectId: string) {
+    if (!projectId) return false;
+    if (!this.clientId) {
+      // queue until clientId is available
+      this.pendingSubscriptions.add(projectId);
+      return true;
+    }
+
+    try {
+      const url = `${this.baseUrl}/realtime/subscribe`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: this.clientId, projectId })
+      });
+      if (!resp.ok) {
+        this.logger.warn('Failed to subscribe to project', { projectId, status: resp.status });
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.error('Error subscribing to project', { projectId }, error);
+      return false;
+    }
+  }
+
+  // Unsubscribe from a project channel
+  async unsubscribe(projectId: string) {
+    if (!projectId) return false;
+    if (!this.clientId) {
+      this.pendingSubscriptions.delete(projectId);
+      return true;
+    }
+
+    try {
+      const url = `${this.baseUrl}/realtime/unsubscribe`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: this.clientId, projectId })
+      });
+      if (!resp.ok) {
+        this.logger.warn('Failed to unsubscribe from project', { projectId, status: resp.status });
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.error('Error unsubscribing from project', { projectId }, error);
+      return false;
     }
   }
 

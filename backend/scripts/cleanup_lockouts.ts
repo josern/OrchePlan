@@ -12,13 +12,11 @@ async function cleanupExpiredLocks() {
     const lockoutService = new AccountLockoutService(prisma);
     const cleanedCount = await lockoutService.cleanupExpiredLocks();
     
-    logger.info('Lockout cleanup completed', { cleanedCount });
-    console.log(`Cleaned up ${cleanedCount} expired account locks`);
+  logger.info('Lockout cleanup completed', { cleanedCount });
     
     process.exit(0);
   } catch (error) {
-    logger.error('Lockout cleanup failed', {}, error);
-    console.error('Lockout cleanup failed:', error);
+    logger.error('Lockout cleanup failed', {}, error instanceof Error ? error.message : error);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

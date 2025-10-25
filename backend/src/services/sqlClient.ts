@@ -142,6 +142,10 @@ export async function createTask(data: { title: string; projectId: string; descr
     if (!parent) throw new Error('parent task not found');
     if (parent.projectId !== projectId) throw new Error('parent task does not belong to project');
   }
+  // Intentionally do NOT coerce a new subtask's status to the parent's status.
+  // The UI (and server) should allow creating a child in an earlier status
+  // (e.g. To-Do) even when the parent is already further along. This prevents
+  // unexpected inheritance of the parent's status onto newly created subtasks.
 
   // Defensive logging to help diagnose FK violations (Prisma P2003)
   try {

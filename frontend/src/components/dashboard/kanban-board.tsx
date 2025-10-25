@@ -6,11 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import TaskItem from './task-item';
 import CommentPromptModal from './comment-prompt-modal';
+import { getCommentRequirement } from '@/lib/comment-utils';
 import { ComponentErrorBoundary } from '@/components/error-boundary';
 import { DndContext, closestCenter, DragEndEvent, useDroppable, UniqueIdentifier, DragStartEvent, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useApp } from '@/context/app-context';
+import { useModal } from '@/context/modal-context';
 import { moveTaskToStatus } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { sortByPriorityThen } from '@/lib/priority-utils';
@@ -148,6 +150,8 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
   } | null>(null);
   const { projects, currentUser } = useApp();
   const { toast } = useToast();
+    // modal registry (optional)
+    const modal = (() => { try { return useModal(); } catch (e) { return null; } })();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -246,20 +250,51 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
                     }
                 }
                 
-                // Check comment requirements: Required OR Optional (but not Disabled)
-                const shouldShowModal = targetStatus.requiresComment || 
-                                      (targetStatus.allowsComment && !targetStatus.requiresComment);
-                
-                if (shouldShowModal) {
+        // Determine whether a comment modal should be shown for this status
+        // change using the centralized helper.
+        const requirement = getCommentRequirement(newStatusId, taskStatusOptions);
+        if (requirement.shouldShowModal) {
                     // Show comment modal
                     setPendingMove({
                         taskId,
                         newStatusId,
-                        statusName: targetStatus.name,
-                        taskTitle: task.title,
-                        isRequired: !!targetStatus.requiresComment
+            statusName: requirement.statusName || targetStatus.name,
+            taskTitle: task.title,
+            isRequired: !!requirement.isRequired
                     });
-                    setCommentModalOpen(true);
+                    // should show comment modal for this drag move
+                    if (modal) {
+                        modal.closeAll();
+                        // Capture the taskId/newStatusId into the onConfirm handler directly to avoid
+                        // relying on pendingMove state which may not be applied synchronously.
+                        const capturedTaskId = taskId;
+                        const capturedNewStatusId = newStatusId;
+                        modal.showModal(
+                          <CommentPromptModal
+                            isOpen={true}
+                            onClose={() => { /* closed by modalId when available */ }}
+                            onConfirm={async (comment: string) => {
+                              try {
+                                await moveTaskToStatus(capturedTaskId, capturedNewStatusId, comment || undefined);
+                                // Notify parent/UI of the change
+                                onStatusChange(capturedTaskId, capturedNewStatusId as TaskStatus);
+                              } catch (error) {
+                                console.error('Failed to move task with comment (inline handler):', error);
+                                // Fallback to still update UI so it doesn't look stale
+                                onStatusChange(capturedTaskId, capturedNewStatusId as TaskStatus);
+                              } finally {
+                                setCommentModalOpen(false);
+                                setPendingMove(null);
+                              }
+                            }}
+                            statusName={targetStatus.name}
+                            taskTitle={task.title}
+                            isRequired={!!targetStatus.requiresComment}
+                          />
+                        );
+                    } else {
+                        setCommentModalOpen(true);
+                    }
                 } else {
                     // Move directly without comment (disabled or default)
                     onStatusChange(taskId, newStatusId as TaskStatus);
@@ -273,6 +308,7 @@ export default function KanbanBoard({ tasks, taskStatusOptions, onStatusChange, 
   }, [tasks, taskStatusOptions, onStatusChange]);
 
   const handleCommentConfirm = useCallback(async (comment: string) => {
+  // handle confirm from fallback modal
     if (pendingMove) {
         try {
             // Use the new API endpoint that handles comment requirements

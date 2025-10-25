@@ -29,6 +29,8 @@ import { useApp } from '../../context/app-context';
 import { findProjectById } from '../../lib/projects';
 import { moveTaskToStatus } from '../../lib/api';
 import CommentPromptModal from './comment-prompt-modal';
+import { getCommentRequirement } from '../../lib/comment-utils';
+import { useModal } from '@/context/modal-context';
 
 const taskFormSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters.'),
@@ -55,6 +57,8 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [pendingTaskData, setPendingTaskData] = useState<any>(null);
   const [isStatusChangeRequired, setIsStatusChangeRequired] = useState(false);
+  // modal registry (optional)
+  const modal = (() => { try { return useModal(); } catch (e) { return null; } })();
   
   const form = useForm<z.infer<typeof taskFormSchema>>({
     resolver: zodResolver(taskFormSchema),
@@ -219,18 +223,32 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
           const targetStatus = targetProject.taskStatusOptions.find(s => s.id === values.status);
           
           if (targetStatus) {
-            const requiresComment = targetStatus.requiresComment;
-            const allowsComment = targetStatus.allowsComment;
-            
-            if (requiresComment || allowsComment) {
+            const { shouldShowModal, isRequired, statusName } = await import('../../lib/comment-utils').then(m => m.getCommentRequirement(values.status, targetProject.taskStatusOptions));
+
+            if (shouldShowModal) {
               // Show comment modal
               setPendingTaskData({
                 isEdit: true,
                 originalTask: taskToEdit,
                 taskData,
               });
-              setIsStatusChangeRequired(requiresComment || false);
-              setIsCommentModalOpen(true);
+              setIsStatusChangeRequired(isRequired || false);
+              // status change requires comment: show prompt
+              if (modal) {
+                modal.closeAll();
+                modal.showModal(
+                  <CommentPromptModal
+                    isOpen={true}
+                    onClose={() => { /* closed by modalId when available */ }}
+                    onConfirm={handleCommentConfirm}
+                    statusName={statusName || targetStatus.name}
+                    taskTitle={taskToEdit.title}
+                    isRequired={!!isRequired}
+                  />
+                );
+              } else {
+                setIsCommentModalOpen(true);
+              }
               return; // Don't proceed immediately
             }
           }

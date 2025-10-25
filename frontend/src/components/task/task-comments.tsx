@@ -7,15 +7,23 @@ import { MessageCircle, Edit2, Trash2, Send, X } from 'lucide-react';
 import { getTaskComments, createTaskComment, updateTaskComment, deleteTaskComment } from '@/lib/api';
 import { TaskComment } from '@/lib/types';
 import { useApp } from '@/context/app-context';
+import { useModal } from '@/context/modal-context';
 import { toast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 interface TaskCommentsProps {
   taskId: string;
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
+  // injected by ModalProvider when opened through the modal registry
+  modalId?: number;
 }
 
-export function TaskComments({ taskId, isOpen, onClose }: TaskCommentsProps) {
+export function TaskComments({ taskId, isOpen, onClose, modalId }: TaskCommentsProps) {
+  const modal = (() => {
+    try { return useModal(); } catch (e) { return null; }
+  })();
   const { currentUser } = useApp();
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -134,20 +142,29 @@ export function TaskComments({ taskId, isOpen, onClose }: TaskCommentsProps) {
 
   if (!isOpen) return null;
 
+  // Render TaskComments as a Dialog so it's portalled and correctly stacked above the app
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <CardTitle className="flex items-center gap-2">
-            <MessageCircle className="h-5 w-5" />
-            Task Comments
-          </CardTitle>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </CardHeader>
-        
-        <CardContent className="flex-1 overflow-hidden flex flex-col">
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        if (modalId && modal) modal.closeModal(modalId);
+        else if (onClose) onClose();
+      }
+    }}>
+      <DialogContent className="sm:max-w-4xl border-0 p-0 bg-transparent shadow-none">
+        {/* Accessible title for screen readers — visually hidden to avoid duplicate visible headings */}
+        <DialogTitle>
+          <VisuallyHidden>Task Comments</VisuallyHidden>
+        </DialogTitle>
+          <Card className="w-full max-w-4xl max-h-[80vh] flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <CardTitle className="flex items-center gap-2">
+                <MessageCircle className="h-5 w-5" />
+                Task Comments
+              </CardTitle>
+              {/* DialogContent provides a Close button; avoid rendering another X here */}
+            </CardHeader>
+          
+          <CardContent className="flex-1 overflow-hidden flex flex-col">
           {/* Comments List */}
           <div className="flex-1 overflow-y-auto space-y-4 mb-4">
             {loading ? (
@@ -247,7 +264,8 @@ export function TaskComments({ taskId, isOpen, onClose }: TaskCommentsProps) {
             </div>
           </div>
         </CardContent>
-      </Card>
-    </div>
+        </Card>
+      </DialogContent>
+    </Dialog>
   );
 }

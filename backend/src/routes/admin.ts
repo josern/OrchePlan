@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthedRequest, requireAdmin } from '../middleware/auth';
 import { AccountLockoutService } from '../services/accountLockout';
-import { findUserByEmail, findUserById } from '../services/sqlClient';
+import { findUserByEmail, findUserById, deleteProject } from '../services/sqlClient';
 import { createSecureValidation } from '../middleware/validation';
 import { createComponentLogger } from '../utils/logger';
 import prisma from '../services/sqlClient';
@@ -289,6 +289,77 @@ router.post('/lockouts/:email/lock',
 );
 
 // User Management Endpoints
+
+// GET /admin/stats - Return system-wide statistics: total users, projects, tasks and per-user counts
+router.get('/stats', async (req: AuthedRequest, res: Response) => {
+  try {
+    // total counts
+    const [totalUsers, totalProjects, totalTasks] = await Promise.all([
+      prisma.user.count(),
+      prisma.project.count(),
+      prisma.task.count()
+    ]);
+
+    // per-user counts: tasks and projects owned/created
+    const usersResult = await prisma.user.findMany({
+      select: { id: true, name: true, email: true }
+    });
+    const users: { id: string; name: string | null; email: string }[] = usersResult;
+
+  // fetch counts grouped by user (use _all to be compatible across prisma versions)
+  const taskCounts = await prisma.task.groupBy({ by: ['assigneeId'], _count: { _all: true } }) as Array<{ assigneeId: string | null; _count: { _all: number } }>;
+  const projectCounts = await prisma.project.groupBy({ by: ['ownerId'], _count: { _all: true } }) as Array<{ ownerId: string | null; _count: { _all: number } }>;
+
+    const taskMap: Record<string, number> = {};
+  taskCounts.forEach((tc) => { if (tc.assigneeId) taskMap[tc.assigneeId] = tc._count._all; });
+    const projectMap: Record<string, number> = {};
+    projectCounts.forEach((pc) => { if (pc.ownerId) projectMap[pc.ownerId] = pc._count._all; });
+
+    // Dev-only debug info to help diagnose missing counts
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        logger.info('admin.stats debug', { taskCountsSample: taskCounts.slice(0,10), projectCountsSample: projectCounts.slice(0,10) });
+      } catch (e) {
+        // ignore logging errors
+      }
+    }
+
+    const perUser = users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      taskCount: taskMap[u.id] || 0,
+      projectCount: projectMap[u.id] || 0
+    }));
+
+    const resp: any = {
+      success: true,
+      // keep nested totals for backward compatibility
+      totals: { users: totalUsers, projects: totalProjects, tasks: totalTasks },
+      // also include flat totals which the frontend expects
+      totalUsers,
+      totalProjects,
+      totalTasks,
+      perUser
+    };
+
+    // In non-production include raw aggregation data to aid debugging
+    if (process.env.NODE_ENV !== 'production') {
+      resp.debug = {
+        taskCountsRaw: taskCounts,
+        projectCountsRaw: projectCounts,
+        taskMap,
+        projectMap
+      };
+    }
+
+    res.json(resp);
+  } catch (error) {
+    logger.error('Error fetching admin stats', { adminId: req.userId }, error);
+    res.status(500).json({ error: 'Failed to retrieve stats' });
+  }
+});
+
 
 // GET /admin/users - List all users with filtering and pagination
 router.get('/users',
@@ -636,9 +707,38 @@ router.delete('/users/:id',
       if (user.role === 'superuser' && admin?.role !== 'superuser') {
         return res.status(403).json({ error: 'Only superusers can delete other superuser accounts' });
       }
-      
-      // Delete the user (this will cascade to related records)
-      await prisma.user.delete({ where: { id } });
+        // Handle projects owned by the user. For each project:
+        // - if there are no other members with role 'owner', delete the project automatically
+        // - if there are other owners, collect them as blocking projects and return an error
+        const ownedProjects = await prisma.project.findMany({ where: { ownerId: id }, select: { id: true, name: true } });
+        const blocking: Array<{ id: string; name: string; otherOwners: any[] }> = [];
+
+        for (const proj of ownedProjects) {
+          // find project members with role 'owner' excluding the target user
+          const otherOwners = await prisma.projectMember.findMany({ where: { projectId: proj.id, role: 'owner', userId: { not: id } }, select: { userId: true } });
+          if (otherOwners.length === 0) {
+            // no other owners - delete the project (safe transaction in deleteProject)
+            try {
+              await deleteProject(proj.id);
+            } catch (e) {
+              logger.error('Failed to delete owned project during user deletion', { projectId: proj.id, adminId, error: e });
+              blocking.push({ id: proj.id, name: proj.name, otherOwners: [] });
+            }
+          } else {
+            blocking.push({ id: proj.id, name: proj.name, otherOwners });
+          }
+        }
+
+        if (blocking.length > 0) {
+          return res.status(400).json({
+            error: 'User owns projects that require reassignment',
+            projects: blocking,
+            message: 'Some projects have other owners and need reassignment before deleting the user. Projects with no other owners were deleted automatically.'
+          });
+        }
+
+        // Safe to delete (all owned projects either deleted or none existed)
+        await prisma.user.delete({ where: { id } });
       
       logger.error('Admin deleted user account', {
         adminId,

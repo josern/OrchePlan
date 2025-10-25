@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthedRequest, getReqUserId, ensureUser } from '../middleware/auth';
-import { createTask, getTasksByProject, updateTask, deleteTask, isProjectEditorOrOwner, getProjectById, getTaskById, getProjectsForUser, getStatusById, createTaskComment, getTaskComments, updateTaskComment, deleteTaskComment } from '../services/sqlClient';
+import { createTask, getTasksByProject, updateTask, deleteTask, isProjectEditorOrOwner, getProjectById, getTaskById, getProjectsForUser, getStatusById, listStatusesByProject, createTaskComment, getTaskComments, updateTaskComment, deleteTaskComment, findUserByEmail } from '../services/sqlClient';
+import { createComponentLogger } from '../utils/logger';
 import { realtimeService } from '../services/realtime';
 import { sanitizeInput } from '../middleware/validation';
 import { validateCreateTask, validateUpdateTask, validateDeleteTask, validateMoveTask, validatePagination } from '../middleware/validationSchemas';
@@ -65,6 +66,16 @@ router.post('/', ensureUser, validateCreateTask, async (req: AuthedRequest, res:
     
     const task = await createTask({ title, description, priority, projectId, assigneeId, statusId, parentId });
     
+    // Debug: log the created task payload so we can compare what the server
+    // returns to what is broadcast over SSE. This helps identify cases where
+    // the server later broadcasts an unexpected parent update.
+    try {
+      const logger = createComponentLogger('routes/tasks:post');
+      logger.debug('Task created via API', { taskId: task?.id, projectId: task?.projectId, parentId: task?.parentId, statusId: task?.statusId, task });
+    } catch (e) {
+      // ignore logging failures
+    }
+
     // Broadcast task creation to other clients
     realtimeService.broadcastTaskUpdate(task, 'created');
     
@@ -103,10 +114,13 @@ router.post('/:id/move', ensureUser, validateMoveTask, async (req: AuthedRequest
     const ok = await isProjectEditorOrOwner(existing.projectId, uid);
     if (!ok) return res.status(403).json({ error: 'Forbidden' });
 
-    // Check if the target status requires a comment
+    // Check if the target status exists and whether it requires a comment
     const targetStatus = await getStatusById(statusId);
     if (!targetStatus) return res.status(400).json({ error: 'Status not found' });
-    
+
+    // If the target status requires a comment and none was provided, return a helpful 400
+    // so callers (or clients) can prompt the user to provide one. This keeps the
+    // contract compatible with previous behavior which returned requiresComment:true.
     if (targetStatus.requiresComment && (!comment || comment.trim() === '')) {
       return res.status(400).json({ 
         error: 'Comment required', 
@@ -115,13 +129,64 @@ router.post('/:id/move', ensureUser, validateMoveTask, async (req: AuthedRequest
       });
     }
 
-    // Update the task status
-    const updated = await updateTask(taskId, { statusId });
+    // Server-side parent/subtask validation: parent tasks cannot be moved to a status
+    // with higher order than any of their sub-tasks. Enforce this on the server so
+    // clients cannot bypass the UI checks.
+    if (!existing.parentId) {
+      // this is a parent task; fetch its sub-tasks
+      const subTasks = await prisma.task.findMany({ where: { parentId: taskId } });
+      if (subTasks.length > 0) {
+        // build a map of statusId -> order for this project
+        const statuses = await listStatusesByProject(existing.projectId);
+        const orderMap = new Map<string, number | null>();
+        for (const s of statuses) orderMap.set(s.id, s.order ?? null);
+
+        const targetOrder = targetStatus.order ?? null;
+        const hasSubTaskWithLowerOrder = subTasks.some((subTask: any) => {
+          // Prisma Task records use `statusId` as the foreign key. Some code paths
+          // may also include a populated `status` object, but to be robust we
+          // prefer `statusId` when present.
+          const subStatusId = (subTask as any).statusId ?? (subTask as any).status;
+          const so = orderMap.get(subStatusId) ?? null;
+          // If we cannot determine either the subtask order or the target order,
+          // conservatively block the move so clients can't bypass UI constraints
+          // by omitting status metadata. This prevents accidentally promoting a
+          // parent above a subtask when we don't have reliable ordering info.
+          if (so === null || targetOrder === null) return true;
+          return so < targetOrder;
+        });
+
+        if (hasSubTaskWithLowerOrder) {
+          return res.status(400).json({ error: 'Cannot move parent task above sub-task status', statusName: targetStatus.label });
+        }
+      }
+    }
+
+    // Perform the status update and optional comment creation atomically in a DB transaction
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const updatedTask = await tx.task.update({ where: { id: taskId }, data: { status: { connect: { id: statusId } } } });
+      if (comment && comment.trim() !== '') {
+        await tx.taskComment.create({
+          data: {
+            taskId,
+            authorId: uid,
+            content: comment.trim(),
+            statusId
+          }
+        });
+      }
+      return updatedTask;
+    });
+
     if (!updated) return res.status(404).json({ error: 'Failed to update task' });
 
-    // Save comment if provided
-    if (comment && comment.trim() !== '') {
-      await createTaskComment(taskId, uid, comment.trim(), statusId);
+    // Development-only info log to trace successful moves during debugging
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        console.info(`[tasks] task ${taskId} moved to status ${statusId} by user ${uid}`);
+      } catch (e) {
+        // ignore logging failures
+      }
     }
 
     // Broadcast task update to other clients
@@ -326,13 +391,10 @@ router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response
     }
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
-      if (process.env.NODE_ENV !== 'production') {
-        try {
-          // eslint-disable-next-line no-console
-          console.debug('bulk-import received invalid tasks payload. typeof(req.body)=', typeof req.body, 'bodyKeys=', Object.keys(req.body || {}), 'tasksType=', typeof tasks, 'tasksPreview=', JSON.stringify(Array.isArray(tasks) ? (tasks as any[]).slice(0,5) : tasks).slice(0,1000));
-        } catch (e) {
-          // ignore
-        }
+      try {
+        createComponentLogger('routes/tasks:bulk-import').debug('bulk-import received invalid tasks payload', { typeofBody: typeof req.body, bodyKeys: Object.keys(req.body || {}), tasksType: typeof tasks, tasksPreview: Array.isArray(tasks) ? (tasks as any[]).slice(0,5) : tasks });
+      } catch (e) {
+        // ignore logging failures
       }
       return res.status(400).json({ error: 'Tasks array is required' });
     }
@@ -355,7 +417,26 @@ router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response
     for (let i = 0; i < tasks.length; i++) {
       const taskData = tasks[i];
       
+
       try {
+        // Resolve assignee: accept assigneeId, assignedTo (id or email), or assignedToEmail
+        let assigneeIdResolved: string | undefined = undefined;
+        if (taskData.assigneeId) {
+          assigneeIdResolved = taskData.assigneeId;
+        } else if (taskData.assignedTo) {
+          // assignedTo might be an id or an email address
+          const at = typeof taskData.assignedTo === 'string' && taskData.assignedTo.includes('@');
+          if (at) {
+            const user = await findUserByEmail(taskData.assignedTo);
+            assigneeIdResolved = user?.id ?? undefined;
+          } else {
+            assigneeIdResolved = taskData.assignedTo;
+          }
+        } else if (taskData.assignedToEmail) {
+          const user = await findUserByEmail(taskData.assignedToEmail);
+          assigneeIdResolved = user?.id ?? undefined;
+        }
+
         const task = await createTask({
           title: taskData.title,
           description: taskData.description || '',
@@ -365,8 +446,8 @@ router.post('/bulk-import', ensureUser, async (req: AuthedRequest, res: Response
           priority: taskData.priority || 'medium',
           // accept either dueDate or dueTime (clients may send either)
           dueTime: taskData.dueTime ?? taskData.dueDate ?? null,
-          // accept either assigneeId or assignedTo
-          assigneeId: taskData.assigneeId ?? taskData.assignedTo ?? null,
+          // resolved assignee id (may be null)
+          assigneeId: assigneeIdResolved,
           // accept parentId or parent
           parentId: taskData.parentId ?? taskData.parent ?? null
         });

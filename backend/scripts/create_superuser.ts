@@ -52,7 +52,7 @@ function askPassword(question: string): Promise<string> {
 
 async function createSuperuser() {
   try {
-    console.log('🔐 Superuser Creation Tool\n');
+  logger.info('🔐 Superuser Creation Tool');
     
     // Get user input
     const email = await askQuestion('Email: ');
@@ -75,7 +75,7 @@ async function createSuperuser() {
       throw new Error('Passwords do not match');
     }
     
-    console.log('\n');
+  logger.info('');
     
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -91,10 +91,10 @@ async function createSuperuser() {
           data: { role: 'superuser' }
         });
         
-        console.log(`✅ User ${email} has been promoted to superuser`);
+        logger.info(`User ${email} has been promoted to superuser`);
         logger.info('User promoted to superuser', { email, updatedBy: 'script' });
       } else {
-        console.log('❌ Operation cancelled');
+        logger.info('Operation cancelled by user');
       }
     } else {
       // Create new superuser
@@ -109,22 +109,11 @@ async function createSuperuser() {
         }
       });
       
-      console.log(`✅ Superuser created successfully!`);
-      console.log(`   ID: ${user.id}`);
-      console.log(`   Email: ${user.email}`);
-      console.log(`   Name: ${user.name}`);
-      console.log(`   Role: ${user.role}`);
-      
-      logger.info('Superuser created', { 
-        userId: user.id, 
-        email: user.email, 
-        createdBy: 'script' 
-      });
+      logger.info('Superuser created', { userId: user.id, email: user.email, name: user.name, role: user.role });
     }
     
   } catch (error) {
-    logger.error('Error creating superuser', {}, error);
-    console.error('❌ Error:', error instanceof Error ? error.message : 'Unknown error');
+    logger.error('Error creating superuser', {}, error instanceof Error ? error.message : error);
     process.exit(1);
   } finally {
     rl.close();
@@ -162,7 +151,7 @@ if (args.length >= 3) {
           data: { role: 'superuser' }
         });
         
-        console.log(`✅ User ${email} has been promoted to superuser`);
+  logger.info(`User ${email} has been promoted to superuser`);
       } else {
         const hashedPassword = await bcrypt.hash(password, 10);
         
@@ -175,11 +164,11 @@ if (args.length >= 3) {
           }
         });
         
-        console.log(`✅ Superuser created: ${user.email} (ID: ${user.id})`);
+  logger.info(`Superuser created: ${user.email} (ID: ${user.id})`);
       }
       
     } catch (error) {
-      console.error('❌ Error:', error instanceof Error ? error.message : 'Unknown error');
+      logger.error('Error creating superuser (non-interactive)', {}, error instanceof Error ? error.message : error);
       process.exit(1);
     } finally {
       await prisma.$disconnect();
