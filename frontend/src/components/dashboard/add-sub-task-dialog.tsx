@@ -31,21 +31,33 @@ const AddSubTaskDialog = memo<AddSubTaskDialogProps>(function AddSubTaskDialog({
     // Determine the first (lowest-order) visible status for this project.
   // Prefer the project's first visible status; do NOT fall back to the parent's
   // status to avoid accidental inheritance.
-  const firstStatusId: string | undefined = statusUtils.getFirstVisibleStatusId(project as any);
+    const firstStatusId: string | undefined = statusUtils.getFirstVisibleStatusId(project as any);
 
-    const newSubTask: Omit<Task, 'id'> = {
+    // Build a payload shape that allows an optional status (server will apply default if omitted)
+    const newSubTask: {
+      title: string;
+      priority: Task['priority'];
+      projectId: string;
+      assigneeId?: string;
+      parentId?: string;
+      status?: string;
+    } = {
       title,
-      priority: parentTask.priority || 'normal', // Inherit parent's priority or default to medium
+      priority: parentTask.priority || 'normal', // Inherit parent's priority or default to normal
       projectId: parentTask.projectId,
       assigneeId: parentTask.assigneeId,
       parentId: parentTask.id,
-  // Default a new sub-task to the first visible status in the project
-  // (e.g. 'To-Do'). If the project has no statuses configured, leave the
-  // status undefined so the server will choose the project's default.
-  status: firstStatusId ?? undefined,
     };
 
-    await addTask(newSubTask);
+    // Default a new sub-task to the first visible status in the project
+    // (e.g. 'To-Do'). If the project has no statuses configured, omit the
+    // status so the server will choose the project's default.
+    if (firstStatusId) newSubTask.status = firstStatusId;
+
+  // The app's addTask expects a full Omit<Task,'id'> where `status` is required
+  // but we intentionally omit `status` when there is no project status configured
+  // so the server will apply its default. Cast to satisfy the type system.
+  await addTask(newSubTask as unknown as Omit<Task, 'id'>);
     // Previously the UI moved the parent back to the first (default) status
     // when creating a sub-task. That caused unexpected parent regressions
     // (parent moved to To-Do) when users created subtasks. We intentionally
