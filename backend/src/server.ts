@@ -207,16 +207,21 @@ const csrfProtection = csrf({
 
 const criticalOperationCSRF = (req: Request, res: Response, next: NextFunction) => {
     // Critical operations that always need CSRF protection
+    // Use path prefixes without trailing slashes so startsWith matches both
+    // the root path (e.g. /tasks) and subpaths (e.g. /tasks/bulk-import)
     const criticalPaths = [
-        '/auth/',               // Authentication operations
-        '/admin/',              // Admin operations  
-        '/users/',              // User management
-        '/projects/',           // Project creation/deletion
-        '/tasks/',              // Task creation/editing/deletion
-        '/statuses/'            // Status management
+        '/auth',               // Authentication operations
+        '/admin',              // Admin operations
+        '/users',              // User management
+        '/projects',           // Project creation/deletion
+        '/tasks',              // Task creation/editing/deletion
+        '/statuses'            // Status management
     ];
 
-    const isCriticalOperation = criticalPaths.some(path => req.url.startsWith(path));
+    // Use req.path (URL path without query) and startsWith to match both
+    // the exact base route and sub-routes (e.g. /tasks and /tasks/foo)
+    const requestPath = (req.path || req.url || '');
+    const isCriticalOperation = criticalPaths.some(path => requestPath.startsWith(path));
     const isStateChanging = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method);
 
     // Extra debug logging for CSRF in development
@@ -273,10 +278,29 @@ logger.info('CSRF protection configured', {
 app.get('/csrf-token', (req, res) => {
     // Apply CSRF protection to the token endpoint itself
     csrfProtection(req, res, () => {
-        res.json({ 
-            csrfToken: req.csrfToken(),
-            message: 'CSRF token generated successfully'
-        });
+        // Explicitly set the cookie so clients reliably receive the token
+        // (some environments/proxies may strip Set-Cookie from the csurf helper)
+        try {
+            const token = req.csrfToken();
+            const cookieOptions = {
+                path: '/',
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const,
+                maxAge: 3600000
+            };
+
+            // Set the token cookie (name matches csurf cookie key)
+            res.cookie('_csrf', token, cookieOptions);
+
+            res.json({ 
+                csrfToken: token,
+                message: 'CSRF token generated successfully'
+            });
+        } catch (err) {
+            logger.warn('Failed to generate CSRF token', { component: 'csrf', error: err && (err as any).message ? (err as any).message : String(err) });
+            res.status(500).json({ error: 'Failed to generate CSRF token' });
+        }
     });
 });
 
