@@ -222,8 +222,8 @@ export default function AddTaskDialog({ children, taskToEdit, defaultProjectId, 
         if (targetProject && targetProject.taskStatusOptions) {
           const targetStatus = targetProject.taskStatusOptions.find(s => s.id === values.status);
           
-          if (targetStatus) {
-            const { shouldShowModal, isRequired, statusName } = await import('../../lib/comment-utils').then(m => m.getCommentRequirement(values.status, targetProject.taskStatusOptions));
+            if (targetStatus) {
+            const { shouldShowModal, isRequired, statusName } = await import('../../lib/comment-utils').then(m => m.getCommentRequirement(values.status, targetProject.taskStatusOptions || []));
 
             if (shouldShowModal) {
               // Show comment modal
