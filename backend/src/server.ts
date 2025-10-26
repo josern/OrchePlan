@@ -222,27 +222,45 @@ const criticalOperationCSRF = (req: Request, res: Response, next: NextFunction) 
     // the exact base route and sub-routes (e.g. /tasks and /tasks/foo)
     const requestPath = (req.path || req.url || '');
     const isCriticalOperation = criticalPaths.some(path => requestPath.startsWith(path));
+
+    // Allow explicit exemptions for endpoints that should not require CSRF
+    // tokens even in production (e.g. SSE subscription management which
+    // is authenticated via session/JWT and protected by authMiddleware).
+    const csrfExemptPrefixes = ['/realtime'];
+    const isExempt = csrfExemptPrefixes.some(prefix => requestPath.startsWith(prefix));
+    if (isExempt) {
+        if (process.env.NODE_ENV !== 'production') {
+            // In development, skip CSRF for exempted realtime endpoints
+            return next();
+        }
+        // In production explicitly skip CSRF for realtime endpoints that are
+        // authenticated via other means (authMiddleware). Log for auditing.
+        logger.info('Bypassing CSRF for exempt path', { component: 'csrf', path: requestPath });
+        return next();
+    }
     const isStateChanging = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method);
 
     // Extra debug logging for CSRF in development
     if (process.env.NODE_ENV !== 'production') {
         const csrfHeader = req.headers['x-csrf-token'];
         const csrfCookie = req.cookies ? req.cookies._csrf : undefined;
-        logger.debug('CSRF DEBUG', {
+        // Pass the metadata object first so the structured logger (pino)
+        // records fields correctly alongside the message.
+        logger.debug({
             url: req.url,
             method: req.method,
             csrfHeader,
             csrfCookie,
             cookies: req.cookies,
             headers: req.headers
-        });
+        }, 'CSRF DEBUG');
     }
 
     if (isCriticalOperation && isStateChanging) {
         // Always apply CSRF protection to critical operations
         return csrfProtection(req, res, (err: any) => {
             if (err) {
-                logger.warn('CSRF ERROR', {
+                logger.warn({
                     url: req.url,
                     method: req.method,
                     csrfHeader: req.headers['x-csrf-token'],
@@ -250,7 +268,7 @@ const criticalOperationCSRF = (req: Request, res: Response, next: NextFunction) 
                     cookies: req.cookies,
                     headers: req.headers,
                     error: err && err.message ? err.message : String(err)
-                });
+                }, 'CSRF ERROR');
             }
             next(err);
         });
@@ -290,10 +308,14 @@ app.get('/csrf-token', (req, res) => {
                 maxAge: 3600000
             };
 
-            // Set the token cookie (name matches csurf cookie key)
-            res.cookie('_csrf', token, cookieOptions);
-
-            res.json({ 
+            // Important: do NOT write the token back into the csurf cookie.
+            // The csurf middleware stores a secret in the cookie (used to
+            // validate tokens) — overwriting that cookie with the token
+            // itself breaks validation (the token != secret) and results
+            // in "invalid csrf token" errors. We only return the token
+            // to the client; the middleware is responsible for the secret
+            // cookie lifecycle.
+            res.json({
                 csrfToken: token,
                 message: 'CSRF token generated successfully'
             });
